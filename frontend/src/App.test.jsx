@@ -29,6 +29,23 @@ describe('role based navigation', () => {
     expect(screen.queryByRole('link', { name: /viewers/i })).toBeNull();
   });
 
+  it('shows subjects from the authenticated account on the Learning page', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      const path = String(url);
+      if (path.includes('/auth/me')) return { ok: true, status: 200, json: async () => ({ user: { username: 'rohit', role: 'owner', settings: { theme: 'light' } } }) };
+      if (path.includes('/dashboard/summary')) return { ok: true, status: 200, json: async () => ({ today: { spent: 0, learningMinutes: 0 }, week: { spent: 0, learningMinutes: 0 }, month: { spent: 0, learningMinutes: 0, activeDays: 0, sessions: 0 }, budget: { amount: 0, remaining: 0 }, categories: [], subjects: [], recent: [], trend: [] }) };
+      if (path.endsWith('/learning/subjects')) return { ok: true, status: 200, json: async () => ({ items: [{ _id: '0123456789abcdef01234567', name: 'Java', description: 'Backend skills', color: '#334455', icon: 'Code2', archived: false, totalMinutes: 90, sessionCount: 2, weekMinutes: 60, lastStudied: '2026-10-25T10:00:00.000Z' }] }) };
+      if (path.includes('/learning/overview')) return { ok: true, status: 200, json: async () => ({ allTimeMinutes: 90, allTimeSessions: 2, weekMinutes: 60, monthMinutes: 90, sessions: 2, totalMinutes: 90, bySubject: [{ subjectId: '0123456789abcdef01234567', name: 'Java', color: '#334455', minutes: 90 }], mostStudied: { name: 'Java', minutes: 90 }, trend: [] }) };
+      return { ok: true, status: 200, json: async () => ({ item: { reflection: '' } }) };
+    }));
+    render(<BrowserRouter><App /></BrowserRouter>);
+    fireEvent.click(await screen.findByRole('link', { name: /^learning$/i }));
+    expect(await screen.findByRole('heading', { name: 'Your subjects' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Open Java' })).toBeTruthy();
+    expect(screen.getByText('Backend skills')).toBeTruthy();
+  });
+
   it('shows the pending approval screen after registration without entering the app', async () => {
     vi.stubGlobal('fetch', vi.fn(async url => String(url).includes('/auth/me')
       ? { ok: false, status: 401, json: async () => ({ error: 'Please sign in to continue.' }) }

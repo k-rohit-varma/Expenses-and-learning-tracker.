@@ -2,7 +2,8 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { app } from './app.js';
 import { config } from './config.js';
-import { User } from './models.js';
+import { User, WeeklyBudget, LearningSubject } from './models.js';
+import { migrateLegacyLearningSubjects } from './learningMigration.js';
 
 if (!config.mongoUri || !config.authSecret || !config.username || !config.password) {
   console.error('Missing required environment configuration. See backend/.env.example.'); process.exit(1);
@@ -10,6 +11,8 @@ if (!config.mongoUri || !config.authSecret || !config.username || !config.passwo
 await mongoose.connect(config.mongoUri);
 const passwordHash = await bcrypt.hash(config.password, 12);
 await User.init();
+await WeeklyBudget.createIndexes();
+await LearningSubject.createIndexes();
 let owner = await User.findOne({ role: 'owner' });
 if (!owner) {
   const bootstrapUsername = config.username.trim().toLowerCase();
@@ -32,6 +35,7 @@ await User.updateMany(
 );
 const owners = await User.countDocuments({ role: 'owner' });
 if (owners !== 1) throw new Error(`Expected exactly one owner account; found ${owners}.`);
+await migrateLegacyLearningSubjects();
 const server = app.listen(config.port, () => console.log(`LifeLedger API listening on port ${config.port}`));
 async function shutdown() { server.close(async () => { await mongoose.disconnect(); process.exit(0); }); }
 process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);

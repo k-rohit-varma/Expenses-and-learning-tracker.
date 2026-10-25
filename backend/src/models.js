@@ -29,7 +29,8 @@ const learningSchema = new Schema(
   {
     ...base,
     subject: { type: String, required: true, maxlength: 60 },
-    topic: { type: String, required: true, trim: true, maxlength: 140 },
+    subjectId: { type: Schema.Types.ObjectId, ref: "LearningSubject", default: null, index: true },
+    topic: { type: String, trim: true, maxlength: 140, default: "" },
     durationMinutes: { type: Number, required: true, min: 1, max: 1440 },
     sessionDate: { type: Date, required: true, index: true },
     whatILearned: { type: String, default: "", maxlength: 2000 },
@@ -59,19 +60,7 @@ const userSchema = new Schema(
       weeklyGoalMinutes: { type: Number, default: 420 },
       timezone: { type: String, default: "Asia/Kolkata" },
       theme: { type: String, default: "light" },
-      subjects: {
-        type: [String],
-        default: [
-          "DSA",
-          "Java",
-          "MERN Stack",
-          "Backend Development",
-          "AI and Machine Learning",
-          "Japanese",
-          "Finance and Investing",
-          "Other",
-        ],
-      },
+      subjects: { type: [String], default: [] },
       categories: {
         type: [String],
         default: [
@@ -101,6 +90,23 @@ const reviewSchema = new Schema(
   { timestamps: true },
 );
 reviewSchema.index({ userId: 1, date: 1 }, { unique: true });
+const weeklyBudgetSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  weekStart: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
+  weekEnd: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
+  amountPaise: { type: Number, required: true, min: 0 },
+}, { timestamps: true });
+weeklyBudgetSchema.index({ userId: 1, weekStart: 1 }, { unique: true });
+const learningSubjectSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  name: { type: String, required: true, trim: true, maxlength: 60 },
+  description: { type: String, trim: true, maxlength: 500, default: "" },
+  icon: { type: String, trim: true, default: "BookOpen" },
+  color: { type: String, match: /^#[0-9a-fA-F]{6}$/, default: "#637ee8" },
+  archived: { type: Boolean, default: false },
+  weeklyGoalMinutes: { type: Number, min: 1, max: 10080, default: null },
+}, { timestamps: true });
+learningSubjectSchema.index({ userId: 1, name: 1 }, { unique: true, collation: { locale: "en", strength: 2 } });
 export const Expense =
   mongoose.models.Expense || model("Expense", expenseSchema);
 export const LearningSession =
@@ -108,3 +114,5 @@ export const LearningSession =
 export const User = mongoose.models.User || model("User", userSchema);
 export const DailyReview =
   mongoose.models.DailyReview || model("DailyReview", reviewSchema);
+export const WeeklyBudget = mongoose.models.WeeklyBudget || model("WeeklyBudget", weeklyBudgetSchema);
+export const LearningSubject = mongoose.models.LearningSubject || model("LearningSubject", learningSubjectSchema);

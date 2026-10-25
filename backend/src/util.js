@@ -9,8 +9,8 @@ export const expenseInput = z.object({
   notes: z.string().max(1000).optional().default(""),
 });
 export const learningInput = z.object({
-  subject: z.string().trim().min(1).max(60),
-  topic: z.string().trim().min(1).max(140),
+  subjectId: z.string().regex(/^[a-f\d]{24}$/i),
+  topic: z.string().trim().max(140).optional().default(""),
   durationMinutes: z.coerce.number().int().positive().max(1440),
   sessionDate: z.string().datetime({ offset: true }),
   whatILearned: z.string().max(2000).optional().default(""),

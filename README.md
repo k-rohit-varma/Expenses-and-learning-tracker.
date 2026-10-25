@@ -7,6 +7,7 @@ LifeLedger is a private personal dashboard for tracking expenses and learning se
 - One environment-bootstrapped owner plus username/password accounts, rate-limited sign-in/registration, and per-account data isolation.
 - New registrations remain pending until the owner approves them. The owner-only User Management page supports username search, status filtering, approval/rejection, and block/unblock controls that revoke active sessions immediately.
 - Expense and learning CRUD, search, date/category/payment/subject filters, server pagination, and CSV export.
+- User-created learning subjects with case-insensitive unique names, colors/icons, archive controls, per-subject goals, histories, and learning analytics.
 - Overview with persisted daily, weekly and monthly figures, budget remaining, category mix, spending trends, recent expenses, learning subjects, weekly goal progress, and daily reflections.
 - Combined monthly calendar, date-specific review, analytics, editable preferences, and JSON backup download.
 - Asia/Kolkata date boundaries, Monday-start weeks, INR and paise-backed expense amounts.
@@ -62,6 +63,10 @@ Frontend (`frontend/.env`): `VITE_API_BASE_URL` is the API URL ending in `/api`.
 ## Dates and money
 
 The app treats entered date/time values as Asia/Kolkata. The browser sends an explicit `+05:30` offset; MongoDB stores instants as UTC dates. Date-only filters become midnight Asia/Kolkata at the start and an exclusive next midnight at the end. Reports group days in `Asia/Kolkata`; weeks start Monday. Expenses are stored in integer paise and presented in INR. Settings currently keep Asia/Kolkata as the supported reporting timezone.
+
+Weekly spending budgets are stored separately from account settings, with a unique `(userId, weekStart)` index and week dates represented as Asia/Kolkata calendar dates. Existing monthly budgets remain in `User.settings.monthlyBudgetPaise` and continue to appear in monthly views; they are not converted or modified. The backend initializes the weekly budget index on startup.
+
+Learning subjects are private to each user and have a case-insensitive unique name index. At startup the backend links legacy learning sessions to subjects matching their existing subject text; all session dates, durations, and notes are retained. New accounts start with no prefilled subjects.
 
 ## Tests and builds
 

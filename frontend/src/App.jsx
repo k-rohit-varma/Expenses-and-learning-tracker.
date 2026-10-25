@@ -6,12 +6,16 @@ import {
   Routes,
   useLocation,
   useNavigate,
+  useParams,
 } from "react-router-dom";
 import {
   Activity,
   ArrowDownRight,
   ArrowUpRight,
   BookOpen,
+  Code2,
+  Languages,
+  Brain,
   CalendarDays,
   ChartNoAxesCombined,
   Check,
@@ -49,6 +53,7 @@ import {
   Cell,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -106,7 +111,18 @@ const niceDate = (d) =>
 const duration = (m) =>
   `${Math.floor(m / 60) ? `${Math.floor(m / 60)}h ` : ""}${m % 60 ? `${m % 60}m` : m < 60 ? `${m}m` : ""}`.trim();
 const today = dateKey(new Date());
+const addDays = (key, days) => {
+  const date = new Date(`${key}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+const monday = (key) => {
+  const date = new Date(`${key}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+};
 const OWNER_DISPLAY_NAME = "Rohit Varma Kunaparaju";
+const EMPTY_SUBJECTS = [];
 async function saveExport(path, filename, onError = () => {}) {
   try {
     const blob = await download(path);
@@ -123,6 +139,7 @@ async function saveExport(path, filename, onError = () => {}) {
 const nav = [
   ["/", "Overview", LayoutDashboard],
   ["/expenses", "Expenses", WalletCards],
+  ["/budget", "Budget", Activity],
   ["/learning", "Learning", BookOpen],
   ["/calendar", "Calendar", CalendarDays],
   ["/reports", "Reports", ChartNoAxesCombined],
@@ -139,16 +156,6 @@ const categories = [
   "Health and personal care",
   "Bills and subscriptions",
   "Miscellaneous",
-];
-const subjects = [
-  "DSA",
-  "Java",
-  "MERN Stack",
-  "Backend Development",
-  "AI and Machine Learning",
-  "Japanese",
-  "Finance and Investing",
-  "Other",
 ];
 const palette = [
   "#5176e8",
@@ -343,9 +350,14 @@ function App() {
               path="/expenses"
               element={<Expenses onToast={setToast} settings={settings} />}
             />
+            <Route path="/budget" element={<BudgetPage onToast={setToast} />} />
+            <Route
+              path="/learning/subjects/:subjectId"
+              element={<LearningSubjectPage onToast={setToast} settings={settings} />}
+            />
             <Route
               path="/learning"
-              element={<Learning onToast={setToast} settings={settings} />}
+              element={<Learning onToast={setToast} />}
             />
             <Route path="/calendar" element={<Calendar onToast={setToast} />} />
             <Route path="/reports" element={<Reports />} />
@@ -588,21 +600,29 @@ function Dashboard({ settings, onNavigate, onToast }) {
   const [data, setData] = useState(null),
     [error, setError] = useState(""),
     [modal, setModal] = useState("");
+  const [selectedWeek, setSelectedWeek] = useState(() => monday(today));
+  const [weeklyReport, setWeeklyReport] = useState(null);
   const [review, setReview] = useState("");
   async function refresh() {
     try {
-      setData(await api("/dashboard/summary"));
+      const summary = await api("/dashboard/summary");
+      setData(summary);
+      if (selectedWeek === monday(today)) setWeeklyReport(summary.weeklyBudget);
+      else {
+        const weekly = await api(`/budgets/weekly${qs({ weekStart: selectedWeek })}`);
+        setWeeklyReport(weekly.report);
+      }
       setError("");
     } catch (e) {
       setError(e.message);
     }
   }
   useEffect(() => {
-    refresh();
     api(`/daily-reviews/${today}`)
       .then((r) => setReview(r.item.reflection || ""))
       .catch(() => {});
-  }, []);
+  }, [selectedWeek]);
+  useEffect(() => { refresh(); }, [selectedWeek]);
   async function saveReview() {
     try {
       await api(`/daily-reviews/${today}`, {
@@ -694,6 +714,13 @@ function Dashboard({ settings, onNavigate, onToast }) {
           color="orange"
         />
       </div>
+      <WeeklyOverview
+        report={weeklyReport}
+        weekStart={selectedWeek}
+        onWeekChange={(delta) => setSelectedWeek((week) => addDays(week, delta * 7))}
+        onCurrentWeek={() => setSelectedWeek(monday(today))}
+        onManage={() => onNavigate("/budget", { state: { weekStart: selectedWeek } })}
+      />
       <div className="dashboard-grid">
         <Card className="spending-card">
           <SectionHead
@@ -1039,6 +1066,135 @@ function Dashboard({ settings, onNavigate, onToast }) {
   );
 }
 
+function budgetMessage(report) {
+  if (!report || report.budget === null) return "Set a weekly budget to see your progress here.";
+  const pct = report.percentUsed || 0;
+  if (report.spent === 0) return "No spending yet this week.";
+  if (report.remaining < 0) return `You've exceeded your weekly budget by ${money(Math.abs(report.remaining))}.`;
+  if (pct >= 100) return "Your weekly budget is fully used.";
+  if (pct >= 80) return `You've used ${Math.floor(pct)}% of your weekly budget. Consider limiting non-essential spending.`;
+  if (pct >= 50) return `You've used ${Math.floor(pct)}% of your weekly budget. Keep an eye on the remaining amount.`;
+  return `You've used ${Math.floor(pct)}% of your weekly budget. You're within budget.`;
+}
+
+function WeeklyOverview({ report, weekStart, onWeekChange, onCurrentWeek, onManage }) {
+  const budgetSet = report?.budget !== null && report?.budget !== undefined;
+  const pct = report?.percentUsed ?? 0;
+  const visualPct = Math.min(100, Math.max(0, pct));
+  const color = pct >= 100 ? "#dc686a" : pct >= 80 ? "#e6a442" : "#6481e7";
+  const end = report?.weekEnd || addDays(weekStart, 6);
+  return (
+    <Card className="weekly-overview">
+      <div className="weekly-overview-head">
+        <div>
+          <span className="eyebrow">WEEKLY BUDGET OVERVIEW</span>
+          <h2>{niceDate(`${weekStart}T12:00:00`)} – {niceDate(`${end}T12:00:00`)}</h2>
+        </div>
+        <div className="week-nav">
+          <button className="icon-btn small" aria-label="Previous week" onClick={() => onWeekChange(-1)}><ChevronLeft size={16} /></button>
+          <button className="text-btn" onClick={onCurrentWeek}>This week</button>
+          <button className="icon-btn small" aria-label="Next week" onClick={() => onWeekChange(1)}><ChevronRight size={16} /></button>
+        </div>
+      </div>
+      {!report ? <div className="table-loading">Loading weekly budget…</div> : !budgetSet ? (
+        <div className="weekly-empty"><p>No budget configured for this week.</p><button className="btn primary small-btn" onClick={onManage}>Set weekly budget</button></div>
+      ) : (
+        <>
+          <div className="weekly-overview-metrics">
+            <div><span>Weekly budget</span><strong>{money(report.budget)}</strong></div>
+            <div><span>Spent</span><strong>{money(report.spent)}</strong></div>
+            <div><span>{report.remaining < 0 ? "Over budget" : "Remaining"}</span><strong>{money(Math.abs(report.remaining))}{report.remaining < 0 ? " over" : ""}</strong></div>
+            <div><span>Used</span><strong>{Math.floor(pct)}%</strong></div>
+          </div>
+          <div className="budget-progress" role="progressbar" aria-label="Weekly budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow={visualPct} aria-valuetext={`${Math.floor(pct)}% used`}>
+            <i style={{ width: `${visualPct}%`, background: color }} />
+          </div>
+          <div className={`budget-insight ${pct >= 80 ? "warning" : ""}`} role="status">{budgetMessage(report)}</div>
+          <div className="weekly-overview-foot">
+            <span>{report.dailyAllowance !== null ? `${money(report.dailyAllowance)} available per remaining day` : report.remainingDays === 0 ? "Week complete · final result shown" : "No budget remains for additional spending"}</span>
+            <button className="text-btn" onClick={onManage}>Manage and view report <ChevronRight size={15} /></button>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function BudgetPage({ onToast }) {
+  const location = useLocation();
+  const [weekStart, setWeekStart] = useState(() => monday(location.state?.weekStart || today));
+  const [report, setReport] = useState(null);
+  const [amount, setAmount] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const currentWeek = monday(today);
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await api(`/budgets/weekly${qs({ weekStart })}`);
+      setReport(result.report);
+      setAmount(result.report.budget === null ? "" : String(result.report.budget));
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); }, [weekStart]);
+  async function save() {
+    const value = amount === "" ? NaN : Number(amount);
+    if (!Number.isFinite(value) || value < 0 || value > 100000000) {
+      setError("Enter a valid non-negative budget amount.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const result = await api("/budgets/weekly", { method: "PUT", body: JSON.stringify({ weekStart, amount: value }) });
+      setReport(result.report);
+      setAmount(String(result.report.budget));
+      onToast("Weekly budget saved.");
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  }
+  const end = addDays(weekStart, 6);
+  const budgetSet = report?.budget !== null && report?.budget !== undefined;
+  return <>
+    <PageTitle eyebrow="SPEND WITH INTENTION" title="Weekly budget" description="Set a limit for each week and see where your spending goes." action={<button className="btn secondary" onClick={() => setWeekStart(currentWeek)}>Current week</button>} />
+    <div className="budget-week-controls">
+      <button className="btn secondary" onClick={() => setWeekStart((week) => addDays(week, -7))}><ChevronLeft size={16} /> Previous week</button>
+      <strong>{niceDate(`${weekStart}T12:00:00`)} – {niceDate(`${end}T12:00:00`)}</strong>
+      <button className="btn secondary" onClick={() => setWeekStart((week) => addDays(week, 7))}>Next week <ChevronRight size={16} /></button>
+    </div>
+    {error && <div className="inline-error">{error}</div>}
+    {loading || !report ? <div className="table-loading">Loading weekly budget…</div> : <>
+      <div className="stat-grid budget-stats">
+        <Stat label="Weekly budget" value={budgetSet ? money(report.budget) : "Not set"} sub="Selected Monday–Sunday week" icon={Wallet} color="blue" />
+        <Stat label="Spent this week" value={money(report.spent)} sub={`${report.expenseCount} expenses`} icon={WalletCards} color="purple" />
+        <Stat label={report.remaining < 0 ? "Over budget" : "Remaining"} value={budgetSet ? money(Math.abs(report.remaining)) : "—"} sub={report.remaining < 0 ? "Over the configured limit" : "Available in this week"} icon={Activity} color={report.remaining < 0 ? "orange" : "green"} />
+        <Stat label="Budget used" value={budgetSet ? `${Math.floor(report.percentUsed || 0)}%` : "—"} sub={budgetSet ? budgetMessage(report) : "Set a budget to track progress"} icon={ChartNoAxesCombined} color={report.percentUsed >= 80 ? "orange" : "blue"} />
+      </div>
+      <Card className="budget-editor">
+        <div><h2>{budgetSet ? "Update this week’s budget" : "Set a budget for this week"}</h2><p>{budgetSet ? "Changing the amount updates the report immediately." : "No default amount is created. Choose the limit that works for you."}</p></div>
+        <label>Weekly budget <span className="input-prefix"><b>₹</b><input aria-label="Weekly budget amount" type="number" min="0" max="100000000" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Enter amount" /></span></label>
+        <button className="btn primary" disabled={saving} onClick={save}><Check size={15} /> {saving ? "Saving…" : "Save budget"}</button>
+      </Card>
+      {!budgetSet && <Card className="weekly-empty-card"><h2>No budget configured</h2><p>Weekly spending is {money(report.spent)} across {report.expenseCount} expenses. Set a budget above to see remaining funds and progress.</p></Card>}
+      {budgetSet && <>
+        <div className="budget-progress-detail">
+          <div className="weekly-overview-head"><div><span className="eyebrow">WEEKLY PROGRESS</span><h2>{Math.floor(report.percentUsed || 0)}% used</h2></div><strong>{budgetMessage(report)}</strong></div>
+          <div className="budget-progress large" role="progressbar" aria-label="Weekly budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.min(100, Math.max(0, report.percentUsed || 0))} aria-valuetext={`${Math.floor(report.percentUsed || 0)}% used`}><i style={{ width: `${Math.min(100, Math.max(0, report.percentUsed || 0))}%`, background: report.percentUsed >= 80 ? "#dc686a" : "#6481e7" }} /></div>
+          <div className="weekly-overview-foot"><span>{report.dailyAllowance !== null ? `${money(report.dailyAllowance)} available per remaining day` : report.remainingDays === 0 ? "Week complete · final result shown" : "No budget remains for additional spending"}</span><span>{report.remaining < 0 ? `${money(Math.abs(report.remaining))} over budget` : `${money(report.remaining)} remaining`}</span></div>
+        </div>
+        <div className="dashboard-grid report-grid">
+          <Card><SectionHead title="Spending by category" sub="Share of this week’s spending" />{report.categories.length ? <div className="report-category-list">{report.categories.map((item, i) => <div className="report-category" key={item.name}><span className="category-color" style={{ background: palette[i % palette.length] }} /><div><div className="report-category-name"><b>{item.name}</b><strong>{money(item.amount)} · {item.percent.toFixed(0)}% · {item.count} {item.count === 1 ? "expense" : "expenses"}</strong></div><div className="progress-track"><i style={{ width: `${item.percent}%`, background: palette[i % palette.length] }} /></div></div></div>)}</div> : <Empty title="No spending this week" description="Category details will appear after an expense is added." />}</Card>
+          <Card><SectionHead title="Daily spending" sub="All seven days, including days with no spending" /><ResponsiveContainer width="100%" height={265}><BarChart data={report.daily} margin={{ left: -15, right: 4, top: 12, bottom: 0 }}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="date" tickFormatter={(date) => new Intl.DateTimeFormat("en-IN", { weekday: "short", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`))} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><YAxis tickFormatter={compactMoney} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><Tooltip formatter={(value) => money(value)} labelFormatter={(date) => niceDate(`${date}T12:00:00`)} /><ReferenceLine y={report.budget / 7} stroke="#d79b4a" strokeDasharray="5 4" label={{ value: "Daily budget guide", fill: "var(--muted)", fontSize: 9 }} /><Bar dataKey="amount" name="Spent" fill="#6984e8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></Card>
+        </div>
+      </>}
+      <Card className="weekly-comparison"><SectionHead title="Compared with last week" sub={`${money(report.previousSpent)} spent the previous week`} /><div><strong>{report.difference === 0 ? "Spending was unchanged" : report.difference > 0 ? `${money(report.difference)} more spent` : `${money(Math.abs(report.difference))} less spent`}</strong><span>{report.changePercent === null ? "No percentage comparison because last week had no spending." : `${Math.abs(report.changePercent).toFixed(1)}% ${report.changePercent > 0 ? "higher" : report.changePercent < 0 ? "lower" : "change"} than last week.`}</span></div><p>Average daily spending: <strong>{money(report.averageDaily)}</strong></p><p>Largest category this week: <strong>{report.categories[0]?.name || "No spending recorded"}</strong></p></Card>
+    </>}
+  </>;
+}
+
 function RecordModal({
   type,
   onClose,
@@ -1046,14 +1202,22 @@ function RecordModal({
   onSaved,
   initial = null,
   settings,
+  learningSubjects = EMPTY_SUBJECTS,
+  presetSubjectId = "",
 }) {
+  const navigate = useNavigate();
   const isExpense = type === "expense",
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const categoryOptions = settings?.categories?.length
-      ? settings.categories
-      : categories,
-    subjectOptions = settings?.subjects?.length ? settings.subjects : subjects;
+  const [availableSubjects, setAvailableSubjects] = useState(learningSubjects);
+  useEffect(() => {
+    setAvailableSubjects(learningSubjects);
+    if (!isExpense && !learningSubjects.length) {
+      api("/learning/subjects").then((result) => setAvailableSubjects(result.items)).catch(() => {});
+    }
+  }, [isExpense, learningSubjects]);
+  const categoryOptions = settings?.categories?.length ? settings.categories : categories;
+  const subjectOptions = availableSubjects.filter((item) => !item.archived || item._id === initial?.subjectId);
   const [form, setForm] = useState(
     initial || {
       amount: "",
@@ -1062,7 +1226,7 @@ function RecordModal({
       transactionDate: `${today}T12:00`,
       paymentMethod: "UPI",
       notes: "",
-      subject: subjectOptions[0],
+      subjectId: initial?.subjectId || presetSubjectId || subjectOptions.find((item) => !item.archived)?._id || "",
       topic: "",
       durationMinutes: "",
       sessionDate: `${today}T12:00`,
@@ -1072,6 +1236,12 @@ function RecordModal({
       difficulty: "",
     },
   );
+  useEffect(() => {
+    if (!isExpense && !initial && !form.subjectId) {
+      const first = availableSubjects.find((item) => !item.archived);
+      if (first) setForm((current) => ({ ...current, subjectId: first._id }));
+    }
+  }, [availableSubjects, form.subjectId, initial, isExpense]);
   function change(k, v) {
     setForm((f) => ({ ...f, [k]: v }));
   }
@@ -1089,7 +1259,7 @@ function RecordModal({
           notes: form.notes,
         }
       : {
-          subject: form.subject,
+          subjectId: form.subjectId,
           topic: form.topic,
           durationMinutes: Number(form.durationMinutes),
           sessionDate: indiaIso(form.sessionDate),
@@ -1203,18 +1373,20 @@ function RecordModal({
                 <label>
                   Subject
                   <select
-                    value={form.subject}
-                    onChange={(e) => change("subject", e.target.value)}
+                    required
+                    value={form.subjectId}
+                    onChange={(e) => change("subjectId", e.target.value)}
                   >
+                    <option value="">Choose a subject</option>
                     {subjectOptions.map((x) => (
-                      <option key={x}>{x}</option>
+                      <option key={x._id} value={x._id}>{x.name}{x.archived ? " (archived)" : ""}</option>
                     ))}
                   </select>
                 </label>
+                {!subjectOptions.some((item) => !item.archived) && !initial && <div className="wide-field subject-required-note">Create an active subject before logging a session. <button type="button" className="text-btn" onClick={() => { onClose(); navigate("/learning"); }}>Create a subject</button></div>}
                 <label>
                   Topic
                   <input
-                    required
                     maxLength="140"
                     placeholder="What are you studying?"
                     value={form.topic}
@@ -1297,7 +1469,7 @@ function RecordModal({
             <button type="button" className="btn ghost" onClick={onClose}>
               Cancel
             </button>
-            <button disabled={busy} className="btn primary">
+            <button disabled={busy || (!isExpense && !form.subjectId)} className="btn primary">
               <Check size={16} />
               {busy ? "Saving…" : isExpense ? "Save expense" : "Save session"}
             </button>
@@ -1308,7 +1480,7 @@ function RecordModal({
   );
 }
 
-function RecordList({ type, items, onEdit, onDelete }) {
+function RecordList({ type, items, onEdit, onDelete, learningSubjects = EMPTY_SUBJECTS }) {
   const exp = type === "expense";
   if (!items.length)
     return (
@@ -1342,12 +1514,12 @@ function RecordList({ type, items, onEdit, onDelete }) {
                 <div className="table-primary">
                   {exp ? x.description : x.topic}
                 </div>
-                {exp && x.notes && (
+                {!exp && x.notes && (
                   <div className="table-secondary">{x.notes}</div>
                 )}
               </td>
               <td>
-                <span className="pill">{exp ? x.category : x.subject}</span>
+                <span className="pill" style={!exp ? (() => { const subject = learningSubjects.find((item) => item._id === x.subjectId); return subject ? { color: subject.color, background: `${subject.color}1c` } : {}; })() : undefined}>{exp ? x.category : x.subject}</span>
               </td>
               <td>{niceDate(exp ? x.transactionDate : x.sessionDate)}</td>
               <td>{exp ? x.paymentMethod : duration(x.durationMinutes)}</td>
@@ -1371,7 +1543,7 @@ function RecordList({ type, items, onEdit, onDelete }) {
     </div>
   );
 }
-function RecordsPage({ type, onToast, settings }) {
+function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }) {
   const exp = type === "expense",
     [items, setItems] = useState([]),
     [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 }),
@@ -1380,7 +1552,7 @@ function RecordsPage({ type, onToast, settings }) {
       from: "",
       to: "",
       category: "",
-      subject: "",
+      subjectId: "",
       paymentMethod: "",
       minAmount: "",
       maxAmount: "",
@@ -1390,19 +1562,24 @@ function RecordsPage({ type, onToast, settings }) {
     [modal, setModal] = useState(false),
     [editing, setEditing] = useState(null),
     [confirm, setConfirm] = useState(null);
+  const [learningSubjects, setLearningSubjects] = useState([]);
   const endpoint = exp ? "expenses" : "learning";
+  useEffect(() => {
+    if (!exp) api("/learning/subjects").then((result) => setLearningSubjects(result.items)).catch(() => {});
+  }, [exp]);
   async function load(page = 1) {
     setLoading(true);
     setError("");
     try {
       const f = { ...filters, page, limit: 20 };
       if (exp) {
-        delete f.subject;
+        delete f.subjectId;
       } else {
         delete f.category;
         delete f.paymentMethod;
         delete f.minAmount;
         delete f.maxAmount;
+        if (fixedSubjectId) f.subjectId = fixedSubjectId;
       }
       const r = await api(`/${endpoint}${qs(f)}`);
       setItems(r.items);
@@ -1415,13 +1592,14 @@ function RecordsPage({ type, onToast, settings }) {
   }
   useEffect(() => {
     load(1);
-  }, [type, filters]);
+  }, [type, filters, fixedSubjectId]);
   async function remove() {
     try {
       await api(`/${endpoint}/${confirm._id}`, { method: "DELETE" });
       onToast(exp ? "Expense deleted." : "Session deleted.");
       setConfirm(null);
       load(pagination.page);
+      onChanged?.();
     } catch (e) {
       onToast(e.message);
     }
@@ -1441,7 +1619,7 @@ function RecordsPage({ type, onToast, settings }) {
       from: "",
       to: "",
       category: "",
-      subject: "",
+      subjectId: "",
       paymentMethod: "",
       minAmount: "",
       maxAmount: "",
@@ -1450,14 +1628,16 @@ function RecordsPage({ type, onToast, settings }) {
     <>
       <PageTitle
         eyebrow={exp ? "MONEY, MADE CLEAR" : "LEARNING, MADE VISIBLE"}
-        title={exp ? "Expenses" : "Learning log"}
+        title={exp ? "Expenses" : fixedSubjectId ? "Learning history" : "Learning log"}
         description={
           exp
             ? "Keep track of the little things and the bigger picture."
-            : "A record of what you are learning, one session at a time."
+            : fixedSubjectId ? "Review or add sessions for this subject." : "A record of what you are learning, one session at a time."
         }
         action={
           <button
+            id={fixedSubjectId ? "subject-session-add" : undefined}
+            disabled={Boolean(fixedSubjectId && learningSubjects.find((item) => item._id === fixedSubjectId)?.archived)}
             className="btn primary"
             onClick={() => {
               setEditing(null);
@@ -1514,14 +1694,15 @@ function RecordsPage({ type, onToast, settings }) {
             </>
           ) : (
             <select
-              value={filters.subject}
+              value={fixedSubjectId || filters.subjectId}
               onChange={(e) =>
-                setFilters((f) => ({ ...f, subject: e.target.value }))
+                setFilters((f) => ({ ...f, subjectId: e.target.value }))
               }
+              disabled={Boolean(fixedSubjectId)}
             >
               <option value="">All subjects</option>
-              {subjects.map((x) => (
-                <option key={x}>{x}</option>
+              {learningSubjects.filter((item) => !item.archived).map((x) => (
+                <option key={x._id} value={x._id}>{x.name}</option>
               ))}
             </select>
           )}
@@ -1592,6 +1773,7 @@ function RecordsPage({ type, onToast, settings }) {
             items={items}
             onEdit={edit}
             onDelete={setConfirm}
+            learningSubjects={learningSubjects}
           />
         )}
         <div className="pagination">
@@ -1626,9 +1808,11 @@ function RecordsPage({ type, onToast, settings }) {
           type={type}
           settings={settings}
           initial={editing}
+          learningSubjects={learningSubjects}
+          presetSubjectId={fixedSubjectId}
           onClose={() => setModal(false)}
           onToast={onToast}
-          onSaved={() => load(pagination.page)}
+          onSaved={() => { load(pagination.page); onChanged?.(); }}
         />
       )}
       {confirm && (
@@ -1645,7 +1829,119 @@ function Expenses(props) {
   return <RecordsPage type="expense" {...props} />;
 }
 function Learning(props) {
-  return <RecordsPage type="learning" {...props} />;
+  const navigate = useNavigate();
+  const [items, setItems] = useState([]);
+  const [overview, setOverview] = useState(null);
+  const [range, setRange] = useState("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [error, setError] = useState("");
+  const [subjectsLoading, setSubjectsLoading] = useState(true);
+  const loadSubjects = async () => {
+    setSubjectsLoading(true);
+    try { setItems((await api("/learning/subjects")).items); setError(""); }
+    catch (e) { setError(e.message); }
+    finally { setSubjectsLoading(false); }
+  };
+  useEffect(() => { loadSubjects(); }, []);
+  const overviewQuery = range === "custom"
+    ? qs({ from: customFrom, to: customTo })
+    : qs({ range });
+  useEffect(() => {
+    if (range === "custom" && (!customFrom || !customTo)) return;
+    api(`/learning/overview${overviewQuery}`).then(setOverview).catch((e) => setError(e.message));
+  }, [overviewQuery, range, customFrom, customTo]);
+  async function saveSubject(subject) {
+    try {
+      await api(`/learning/subjects${editing?._id ? `/${editing._id}` : ""}`, {
+        method: editing?._id ? "PATCH" : "POST",
+        body: JSON.stringify(subject),
+      });
+      setEditing(null);
+      props.onToast(editing?._id ? "Subject updated." : "Subject created.");
+      await loadSubjects();
+    } catch (e) { setError(e.message); throw e; }
+  }
+  async function archiveSubject(subject) {
+    try {
+      await api(`/learning/subjects/${subject._id}`, { method: "PATCH", body: JSON.stringify({ archived: !subject.archived }) });
+      props.onToast(subject.archived ? "Subject restored." : "Subject archived.");
+      await loadSubjects();
+    } catch (e) { setError(e.message); }
+  }
+  const active = items.filter((item) => !item.archived);
+  const visibleItems = showArchived ? items.filter((item) => item.archived) : active;
+  return <>
+    <PageTitle eyebrow="LEARNING, MADE VISIBLE" title="Learning" description="Organize your progress by subject and make every session count." action={<button className="btn primary" onClick={() => setEditing({})}><Plus size={16} /> Create subject</button>} />
+    {error && <div className="inline-error">{error}</div>}
+    <div className="stat-grid learning-stats">
+      <Stat label="Total learning time" value={overview ? duration(overview.allTimeMinutes) : "—"} sub={`${overview?.allTimeSessions || 0} sessions across all subjects`} icon={Clock3} color="blue" />
+      <Stat label="This week" value={overview ? duration(overview.weekMinutes) : "—"} sub="Monday through today" icon={CalendarDays} color="purple" />
+      <Stat label="This month" value={overview ? duration(overview.monthMinutes) : "—"} sub="Learning time recorded" icon={BookOpen} color="green" />
+      <Stat label="Most studied" value={overview?.mostStudied?.name || "—"} sub={overview?.mostStudied ? duration(overview.mostStudied.minutes) : "Record a session to see your focus"} icon={Sparkles} color="orange" />
+    </div>
+    <Card className="learning-analytics-card">
+      <div className="learning-analytics-head"><SectionHead title="Learning analytics" sub={`${overview?.sessions || 0} sessions · ${duration(overview?.totalMinutes || 0)} in this range`} /><select aria-label="Learning analytics range" value={range} onChange={(e) => setRange(e.target.value)}><option value="week">This week</option><option value="month">This month</option><option value="30d">Last 30 days</option><option value="all">All time</option><option value="custom">Custom dates</option></select></div>
+      {range === "custom" && <div className="learning-custom-dates"><label>From <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} /></label><label>To <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} /></label></div>}
+      {overview?.bySubject?.length ? <div className="learning-analytics-grid"><div className="learning-subject-bars">{overview.bySubject.map((item) => <div key={item.subjectId} className="subject-bar-row"><div className="subject-bar-label"><span><i style={{ background: item.color }} />{item.name}</span><strong>{duration(item.minutes)}</strong></div><div className="bar-track"><i style={{ width: `${Math.max(4, item.minutes / overview.bySubject[0].minutes * 100)}%`, background: item.color }} /></div></div>)}</div><ResponsiveContainer width="100%" height={220}><PieChart><Pie data={overview.bySubject} dataKey="minutes" nameKey="name" innerRadius={52} outerRadius={82} paddingAngle={3}><Cell fill={overview.bySubject[0]?.color} />{overview.bySubject.slice(1).map((item) => <Cell key={item.subjectId} fill={item.color} />)}</Pie><Tooltip formatter={(value) => duration(value)} /></PieChart></ResponsiveContainer></div> : <div className="learning-chart-empty">No sessions in this date range yet.</div>}
+    </Card>
+    <div className="learning-subject-section-head"><div><h2>Your subjects</h2><p>{active.length} active {active.length === 1 ? "subject" : "subjects"}</p></div><button className="text-btn" onClick={() => setShowArchived((value) => !value)}>{showArchived ? "Show active subjects" : `Archived (${items.length - active.length})`}</button></div>
+    {subjectsLoading ? <div className="table-loading">Loading learning subjects…</div> : visibleItems.length ? <div className="learning-subject-grid">{visibleItems.map((subject) => {
+      const Icon = subjectIcons[subject.icon] || BookOpen;
+      const progress = subject.weeklyGoalMinutes ? Math.min(100, subject.weekMinutes / subject.weeklyGoalMinutes * 100) : null;
+      return <Card className="learning-subject-card" key={subject._id}>
+        <button className="subject-card-open" onClick={() => navigate(`/learning/subjects/${subject._id}`)} aria-label={`Open ${subject.name}`}>
+          <span className="subject-card-icon" style={{ color: subject.color, background: `${subject.color}1c` }}><Icon size={20} /></span><span className="subject-card-identity"><strong>{subject.name}</strong><small>{subject.description || "Learning subject"}</small></span>
+        </button>
+        <div className="subject-card-stats"><div><span>Total time</span><strong>{duration(subject.totalMinutes)}</strong></div><div><span>Sessions</span><strong>{subject.sessionCount}</strong></div><div><span>This week</span><strong>{duration(subject.weekMinutes)}</strong></div><div><span>Last studied</span><strong>{subject.lastStudied ? relativeStudyDate(subject.lastStudied) : "Not yet"}</strong></div></div>
+        {progress !== null && <div className="subject-goal"><div><span>Weekly goal</span><strong>{Math.floor(progress)}% · {duration(subject.weeklyGoalMinutes)} goal</strong></div><div className="bar-track"><i style={{ width: `${progress}%`, background: subject.color }} /></div></div>}
+        <div className="subject-card-actions"><button className="text-btn" onClick={() => navigate(`/learning/subjects/${subject._id}`)}>Open subject <ChevronRight size={15} /></button><button className="icon-btn small" aria-label={`Edit ${subject.name}`} onClick={() => setEditing(subject)}><Edit2 size={14} /></button><button className="text-btn archive-subject-btn" onClick={() => archiveSubject(subject)}>{subject.archived ? "Restore" : "Archive"}</button></div>
+      </Card>;
+    })}</div> : <Card className="learning-empty"><span className="empty-icon"><BookOpen size={22} /></span><h2>{showArchived ? "No archived subjects" : "Start with a subject"}</h2><p>Create subjects such as Java, Japanese, or Data Structures, then log sessions under each one.</p>{!showArchived && <button className="btn primary" onClick={() => setEditing({})}><Plus size={16} /> Create your first subject</button>}</Card>}
+    {editing && <SubjectEditor subject={editing._id ? editing : null} onClose={() => setEditing(null)} onSave={saveSubject} />}
+  </>;
+}
+
+const subjectIcons = { BookOpen, Code2, Languages, Wallet, Brain, Sparkles };
+function relativeStudyDate(value) {
+  const key = dateKey(value);
+  if (key === today) return "Today";
+  if (key === addDays(today, -1)) return "Yesterday";
+  return niceDate(value);
+}
+function SubjectEditor({ subject, onClose, onSave }) {
+  const [form, setForm] = useState({ name: subject?.name || "", description: subject?.description || "", icon: subject?.icon || "BookOpen", color: subject?.color || "#637ee8", weeklyGoalMinutes: subject?.weeklyGoalMinutes || "" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(event) {
+    event.preventDefault(); setBusy(true); setError("");
+    try { await onSave({ ...form, weeklyGoalMinutes: form.weeklyGoalMinutes === "" ? null : Number(form.weeklyGoalMinutes) }); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  return <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="subject-editor-title"><div className="modal-head"><div><div className="eyebrow">LEARNING TRACK</div><h2 id="subject-editor-title">{subject ? "Edit subject" : "Create subject"}</h2></div><button className="icon-btn" aria-label="Close" onClick={onClose}><X size={18} /></button></div><form onSubmit={submit}><div className="modal-fields"><label>Name<input required maxLength="60" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Java" /></label><label>Icon<select value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })}>{Object.keys(subjectIcons).map((icon) => <option key={icon} value={icon}>{icon}</option>)}</select></label><label className="wide-field">Description <span className="optional">Optional</span><textarea rows="2" maxLength="500" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What do you want to learn?" /></label><label>Color<input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} /></label><label>Weekly goal <span className="input-suffix"><input type="number" min="1" max="10080" step="1" value={form.weeklyGoalMinutes} onChange={(e) => setForm({ ...form, weeklyGoalMinutes: e.target.value })} placeholder="Optional" /><b>min / week</b></span></label></div>{error && <div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}>{busy ? "Saving…" : "Save subject"}</button></div></form></div></div>;
+}
+function LearningSubjectPage({ onToast, settings }) {
+  const { subjectId } = useParams();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState(false);
+  const load = async () => { try { setData(await api(`/learning/subjects/${subjectId}`)); setError(""); } catch (e) { setError(e.message); } };
+  useEffect(() => { load(); }, [subjectId]);
+  if (!data) return error ? <div className="inline-error">{error}<button onClick={load}>Try again</button></div> : <div className="table-loading">Loading subject…</div>;
+  const { subject } = data;
+  const Icon = subjectIcons[subject.icon] || BookOpen;
+  return <>
+    <PageTitle eyebrow="SUBJECT LEARNING TRACK" title={subject.name} description={subject.description || "Your sessions and progress in this subject."} action={<><button className="btn secondary" onClick={() => setEditing(true)}><Edit2 size={14} /> Edit subject</button><button className="btn primary" disabled={subject.archived} onClick={() => document.getElementById("subject-session-add")?.click()}><Plus size={15} /> Add session</button></>} />
+    <div className="subject-detail-banner"><span className="subject-card-icon large" style={{ color: subject.color, background: `${subject.color}1c` }}><Icon size={25} /></span><div><span className="eyebrow">SUBJECT OVERVIEW</span><h2>{subject.name}</h2><p>{subject.description || "No description added."}</p><p className="subject-latest">Most recent: {data.recentSession ? `${data.recentSession.topic || "Learning session"} · ${niceDate(data.recentSession.sessionDate)}` : "No session recorded yet."}</p></div>{subject.weeklyGoalMinutes && <div className="subject-detail-goal"><span>This week’s goal</span><strong>{duration(subject.weekMinutes)} / {duration(subject.weeklyGoalMinutes)}</strong><div className="bar-track"><i style={{ width: `${Math.min(100, subject.weekMinutes / subject.weeklyGoalMinutes * 100)}%`, background: subject.color }} /></div></div>}</div>
+    <div className="stat-grid learning-stats"><Stat label="Total time invested" value={duration(subject.totalMinutes)} sub="Across all sessions" icon={Clock3} color="blue" /><Stat label="Sessions" value={subject.sessionCount} sub={subject.lastStudied ? `Last studied ${relativeStudyDate(subject.lastStudied)}` : "No sessions recorded"} icon={BookOpen} color="purple" /><Stat label="This week" value={duration(subject.weekMinutes)} sub="Monday through today" icon={CalendarDays} color="green" /><Stat label="This month" value={duration(subject.monthMinutes)} sub="Learning time recorded" icon={Sparkles} color="orange" /></div>
+    <div className="dashboard-grid report-grid subject-chart-grid"><Card><SectionHead title="Daily learning this week" sub="Minutes invested each day" /><ResponsiveContainer width="100%" height={240}><BarChart data={data.dailyTrend}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="date" tickFormatter={(value) => new Intl.DateTimeFormat("en-IN", { weekday: "short", timeZone: "UTC" }).format(new Date(`${value}T12:00:00Z`))} tickLine={false} axisLine={false} /><YAxis /><Tooltip formatter={(value) => duration(value)} /><Bar dataKey="minutes" name="Learning" fill={subject.color} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></Card><Card><SectionHead title="Weekly trend" sub="Last eight weeks" /><ResponsiveContainer width="100%" height={240}><AreaChart data={data.weeklyTrend}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="weekStart" tickFormatter={(value) => niceDate(`${value}T12:00:00`).split(",")[0]} tickLine={false} axisLine={false} /><YAxis /><Tooltip formatter={(value) => duration(value)} /><Area dataKey="minutes" name="Learning" stroke={subject.color} fill={subject.color} fillOpacity={0.16} /></AreaChart></ResponsiveContainer></Card><Card><SectionHead title="Monthly trend" sub="Last six months" /><ResponsiveContainer width="100%" height={240}><BarChart data={data.monthlyTrend}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="month" tickFormatter={(value) => new Intl.DateTimeFormat("en-IN", { month: "short", timeZone: "UTC" }).format(new Date(`${value}-15T12:00:00Z`))} tickLine={false} axisLine={false} /><YAxis /><Tooltip formatter={(value) => duration(value)} /><Bar dataKey="minutes" name="Learning" fill={subject.color} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></Card></div>
+    <div className="subject-history-head"><div><h2>Learning history</h2><p>Sessions for {subject.name}, newest first.</p></div></div>
+    <RecordsPage type="learning" onToast={onToast} settings={settings} fixedSubjectId={subject._id} onChanged={load} />
+    {editing && <SubjectEditor subject={subject} onClose={() => setEditing(false)} onSave={async (values) => { await api(`/learning/subjects/${subject._id}`, { method: "PATCH", body: JSON.stringify(values) }); setEditing(false); onToast("Subject updated."); load(); }} />}
+  </>;
 }
 function ConfirmDialog({ text, onClose, onConfirm, title = "Delete this record?", confirmLabel = "Delete", busy = false }) {
   return (
@@ -2229,10 +2525,10 @@ function Viewers({ onToast }) {
 }
 
 function Settings({ settings, onSettings, onToast }) {
+  const navigate = useNavigate();
   const [form, setForm] = useState(null),
     [saving, setSaving] = useState(false),
-    [error, setError] = useState(""),
-    [newSubject, setNewSubject] = useState("");
+    [error, setError] = useState("");
   useEffect(() => {
     if (settings)
       setForm({
@@ -2240,7 +2536,6 @@ function Settings({ settings, onSettings, onToast }) {
         dailyGoalMinutes: settings.dailyGoalMinutes || 60,
         weeklyGoalMinutes: settings.weeklyGoalMinutes || 420,
         theme: settings.theme || "light",
-        subjects: settings.subjects || subjects,
         categories: settings.categories || categories,
         timezone: settings.timezone || "Asia/Kolkata",
       });
@@ -2373,60 +2668,9 @@ function Settings({ settings, onSettings, onToast }) {
               <Sparkles size={18} />
             </div>
             <div className="settings-section-body">
-              <h2>Subjects</h2>
-              <p>Keep the subjects you care about close at hand.</p>
-              <div className="tag-list">
-                {form.subjects.map((x) => (
-                  <span className="config-tag" key={x}>
-                    {x}
-                    <button
-                      onClick={() =>
-                        update(
-                          "subjects",
-                          form.subjects.filter((s) => s !== x),
-                        )
-                      }
-                      aria-label={`Remove ${x}`}
-                    >
-                      <X size={13} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <div className="add-tag">
-                <input
-                  value={newSubject}
-                  onChange={(e) => setNewSubject(e.target.value)}
-                  placeholder="Add a subject"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (
-                        newSubject.trim() &&
-                        !form.subjects.includes(newSubject.trim())
-                      )
-                        update("subjects", [
-                          ...form.subjects,
-                          newSubject.trim(),
-                        ]);
-                      setNewSubject("");
-                    }
-                  }}
-                />
-                <button
-                  className="btn secondary small-btn"
-                  onClick={() => {
-                    if (
-                      newSubject.trim() &&
-                      !form.subjects.includes(newSubject.trim())
-                    )
-                      update("subjects", [...form.subjects, newSubject.trim()]);
-                    setNewSubject("");
-                  }}
-                >
-                  <Plus size={14} /> Add
-                </button>
-              </div>
+              <h2>Learning subjects</h2>
+              <p>Create, organize, and archive your learning tracks from the Learning page.</p>
+              <button className="btn secondary" onClick={() => navigate("/learning")}>Manage learning subjects <ChevronRight size={15} /></button>
             </div>
           </Card>
           <Card className="settings-section">

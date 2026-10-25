@@ -7,8 +7,9 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { config } from "./config.js";
-import { Expense, LearningSession, User, DailyReview } from "./models.js";
-import { asyncRoute, bounds, expenseInput, learningInput } from "./util.js";
+import { Expense, LearningSession, User, DailyReview, WeeklyBudget, LearningSubject } from "./models.js";
+import { asyncRoute, bounds, expenseInput, learningInput, localDay } from "./util.js";
+import { addCalendarDays, budgetInput, mondayOf, weeklyBudgetReport, weekStartSchema } from "./budget.js";
 
 export const app = express();
 app.use(helmet());
@@ -81,6 +82,9 @@ const pageParams = (req) => ({
 });
 const expenseWire = (x) => ({ ...x.toObject(), amount: x.amountPaise / 100 });
 const toPaise = (x) => Math.round(x * 100);
+const indiaStart = (date) => new Date(`${date}T00:00:00+05:30`);
+const midnightAfter = (date) => indiaStart(addCalendarDays(date, 1));
+const dateKeyShift = (date, days) => addCalendarDays(date, days);
 const listQuery = (req, field) => {
   const q = {
     userId: userId(req),
@@ -171,6 +175,14 @@ const zLogin = zod.object({
   username: zod.string().trim().min(1).max(100),
   password: zod.string().min(1).max(72),
 });
+export const learningSubjectInput = zod.object({
+  name: zod.string().trim().min(1).max(60),
+  description: zod.string().trim().max(500).optional().default(""),
+  icon: zod.enum(["BookOpen", "Code2", "Languages", "Wallet", "Brain", "Sparkles"]).optional().default("BookOpen"),
+  color: zod.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default("#637ee8"),
+  weeklyGoalMinutes: zod.number().int().min(1).max(10080).nullable().optional().default(null),
+}).strict();
+export const subjectPatchInput = learningSubjectInput.partial().extend({ archived: zod.boolean().optional() }).strict();
 export const zRegister = zod.object({
   username: zod.string().trim().toLowerCase().regex(/^[a-z0-9_.-]{3,30}$/),
   password: zod.string().min(10).max(72),
@@ -186,6 +198,147 @@ app.use("/api", (req, res, next) => {
   }
   next();
 });
+const subjectStatsFor = (sessions, subjectId) => {
+  const matching = sessions.filter((session) => String(session.subjectId) === String(subjectId));
+  const now = localDay(new Date());
+  const weekStart = mondayOf(now);
+  const weekStartAt = indiaStart(weekStart);
+  const tomorrowAt = midnightAfter(now);
+  const monthStart = indiaStart(`${now.slice(0, 7)}-01`);
+  const latest = matching.reduce((value, item) => !value || item.sessionDate > value ? item.sessionDate : value, null);
+  return {
+    totalMinutes: matching.reduce((sum, item) => sum + item.durationMinutes, 0),
+    sessionCount: matching.length,
+    weekMinutes: matching.filter((item) => item.sessionDate >= weekStartAt && item.sessionDate < tomorrowAt).reduce((sum, item) => sum + item.durationMinutes, 0),
+    monthMinutes: matching.filter((item) => item.sessionDate >= monthStart && item.sessionDate < tomorrowAt).reduce((sum, item) => sum + item.durationMinutes, 0),
+    lastStudied: latest,
+  };
+};
+app.get("/api/learning/subjects", asyncRoute(async (req, res) => {
+  const [items, sessions] = await Promise.all([
+    LearningSubject.find({ userId: userId(req) }).sort({ archived: 1, name: 1 }).lean(),
+    LearningSession.find({ userId: userId(req) }).select("subjectId subject durationMinutes sessionDate").lean(),
+  ]);
+  res.json({ items: items.map((item) => ({ ...item, ...subjectStatsFor(sessions, item._id) })) });
+}));
+app.post("/api/learning/subjects", asyncRoute(async (req, res) => {
+  const parsed = learningSubjectInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter a valid subject." });
+  const data = parsed.data;
+  const duplicate = await LearningSubject.findOne({ userId: userId(req), name: data.name }).collation({ locale: "en", strength: 2 });
+  if (duplicate) return res.status(409).json({ error: "You already have a subject with that name." });
+  try {
+    const subject = await LearningSubject.create({ ...data, userId: userId(req) });
+    res.status(201).json({ subject });
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: "You already have a subject with that name." });
+    throw error;
+  }
+}));
+app.get("/api/learning/overview", asyncRoute(async (req, res) => {
+  const today = localDay(new Date());
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const start = req.query.from ? String(req.query.from) : req.query.range === "all" ? "2000-01-01" : req.query.range === "week" ? mondayOf(today) : req.query.range === "30d" ? dateKeyShift(today, -29) : monthStart;
+  const end = req.query.to ? String(req.query.to) : today;
+  const interval = bounds(start, end);
+  const [allSessions, subjects] = await Promise.all([
+    LearningSession.find({ userId: userId(req) }).select("subjectId durationMinutes sessionDate").lean(),
+    LearningSubject.find({ userId: userId(req) }).lean(),
+  ]);
+  const selected = req.query.range === "all" && !req.query.from
+    ? allSessions
+    : allSessions.filter((item) => item.sessionDate >= interval.$gte && item.sessionDate < interval.$lt);
+  const group = (rows) => rows.reduce((map, session) => {
+    const key = String(session.subjectId);
+    map.set(key, (map.get(key) || 0) + session.durationMinutes);
+    return map;
+  }, new Map());
+  const grouped = group(selected);
+  const allGrouped = group(allSessions);
+  const byId = new Map(subjects.map((item) => [String(item._id), item]));
+  const bySubject = [...grouped].map(([id, minutes]) => ({ subjectId: id, name: byId.get(id)?.name || "Uncategorized", color: byId.get(id)?.color || "#89909e", icon: byId.get(id)?.icon || "BookOpen", minutes })).sort((a, b) => b.minutes - a.minutes);
+  const mostStudied = [...allGrouped].map(([id, minutes]) => ({ subjectId: id, name: byId.get(id)?.name || "Uncategorized", minutes })).sort((a, b) => b.minutes - a.minutes)[0] || null;
+  const weekStart = indiaStart(mondayOf(today));
+  const tomorrow = midnightAfter(today);
+  const monthBegin = indiaStart(monthStart);
+  const totalMinutes = selected.reduce((sum, item) => sum + item.durationMinutes, 0);
+  const trendMap = new Map();
+  for (const item of selected) {
+    const day = localDay(item.sessionDate);
+    trendMap.set(day, (trendMap.get(day) || 0) + item.durationMinutes);
+  }
+  res.json({
+    range: { from: start, to: end },
+    totalMinutes,
+    sessions: selected.length,
+    allTimeMinutes: allSessions.reduce((sum, item) => sum + item.durationMinutes, 0),
+    allTimeSessions: allSessions.length,
+    weekMinutes: allSessions.filter((item) => item.sessionDate >= weekStart && item.sessionDate < tomorrow).reduce((sum, item) => sum + item.durationMinutes, 0),
+    monthMinutes: allSessions.filter((item) => item.sessionDate >= monthBegin && item.sessionDate < tomorrow).reduce((sum, item) => sum + item.durationMinutes, 0),
+    mostStudied,
+    bySubject,
+    trend: [...trendMap].sort(([a], [b]) => a.localeCompare(b)).map(([date, minutes]) => ({ date, minutes })),
+  });
+}));
+app.get("/api/learning/subjects/:id", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Learning subject not found." });
+  const subject = await LearningSubject.findOne({ _id: req.params.id, userId: userId(req) }).lean();
+  if (!subject) return res.status(404).json({ error: "Learning subject not found." });
+  const sessions = await LearningSession.find({ userId: userId(req), subjectId: subject._id }).sort({ sessionDate: -1 }).lean();
+  const stats = subjectStatsFor(sessions, subject._id);
+  const today = localDay(new Date());
+  const weekStart = mondayOf(today);
+  const dailyTrend = Array.from({ length: 7 }, (_, index) => {
+    const date = dateKeyShift(weekStart, index);
+    const lo = indiaStart(date), hi = midnightAfter(date);
+    return { date, minutes: sessions.filter((item) => item.sessionDate >= lo && item.sessionDate < hi).reduce((sum, item) => sum + item.durationMinutes, 0) };
+  });
+  const weeklyTrend = Array.from({ length: 8 }, (_, index) => {
+    const startDate = dateKeyShift(weekStart, (index - 7) * 7);
+    const lo = indiaStart(startDate), hi = indiaStart(dateKeyShift(startDate, 7));
+    return { weekStart: startDate, minutes: sessions.filter((item) => item.sessionDate >= lo && item.sessionDate < hi).reduce((sum, item) => sum + item.durationMinutes, 0) };
+  });
+  const currentMonth = new Date(`${today.slice(0, 7)}-01T00:00:00Z`);
+  const monthlyTrend = Array.from({ length: 6 }, (_, index) => {
+    const start = new Date(currentMonth);
+    start.setUTCMonth(start.getUTCMonth() + index - 5);
+    const startDate = start.toISOString().slice(0, 10);
+    const next = new Date(start);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    const endDate = next.toISOString().slice(0, 10);
+    const lo = indiaStart(startDate), hi = indiaStart(endDate);
+    return { month: startDate.slice(0, 7), minutes: sessions.filter((item) => item.sessionDate >= lo && item.sessionDate < hi).reduce((sum, item) => sum + item.durationMinutes, 0) };
+  });
+  res.json({ subject: { ...subject, ...stats }, recentSession: sessions[0] || null, dailyTrend, weeklyTrend, monthlyTrend });
+}));
+app.patch("/api/learning/subjects/:id", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Learning subject not found." });
+  const parsed = subjectPatchInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter valid subject details." });
+  if (!Object.keys(parsed.data).length) return res.status(400).json({ error: "Make at least one subject change." });
+  const subjectQuery = { _id: req.params.id, userId: userId(req) };
+  const subject = await LearningSubject.findOne(subjectQuery);
+  if (!subject) return res.status(404).json({ error: "Learning subject not found." });
+  if (parsed.data.name && parsed.data.name.toLocaleLowerCase() !== subject.name.toLocaleLowerCase()) {
+    const duplicate = await LearningSubject.findOne({ userId: userId(req), name: parsed.data.name, _id: { $ne: subject._id } }).collation({ locale: "en", strength: 2 });
+    if (duplicate) return res.status(409).json({ error: "You already have a subject with that name." });
+  }
+  try {
+    const previousName = subject.name;
+    Object.assign(subject, parsed.data);
+    await subject.save();
+    if (parsed.data.name && parsed.data.name !== previousName) {
+      await LearningSession.updateMany(
+        { userId: userId(req), subjectId: subject._id },
+        { $set: { subject: subject.name } },
+      );
+    }
+    res.json({ subject });
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: "You already have a subject with that name." });
+    throw error;
+  }
+}));
 app.get("/api/users", requireOwner, asyncRoute(async (req, res) => {
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
@@ -311,7 +464,10 @@ app.get(
   asyncRoute(async (req, res) => {
     const { page, limit } = pageParams(req),
       q = listQuery(req, "sessionDate");
-    if (req.query.subject) q.subject = String(req.query.subject);
+    if (req.query.subjectId) {
+      if (!mongoose.isValidObjectId(req.query.subjectId)) return res.status(400).json({ error: "Choose a valid learning subject." });
+      q.subjectId = req.query.subjectId;
+    } else if (req.query.subject) q.subject = String(req.query.subject);
     if (req.query.search) {
       const re = new RegExp(
         String(req.query.search)
@@ -338,8 +494,11 @@ app.post(
   "/api/learning",
   validate(learningInput),
   asyncRoute(async (req, res) => {
+    const subject = await LearningSubject.findOne({ _id: req.validated.subjectId, userId: userId(req), archived: false });
+    if (!subject) return res.status(400).json({ error: "Choose one of your active learning subjects." });
     const x = await LearningSession.create({
       ...req.validated,
+      subject: subject.name,
       userId: userId(req),
       sessionDate: new Date(req.validated.sessionDate),
     });
@@ -363,6 +522,15 @@ app.patch(
   validate(learningInput.partial()),
   asyncRoute(async (req, res) => {
     const d = { ...req.validated };
+    const existing = await LearningSession.findOne({ _id: req.params.id, userId: userId(req) });
+    if (!existing) return res.status(404).json({ error: "Learning session not found." });
+    if (d.subjectId) {
+      const nextSubject = await LearningSubject.findOne({ _id: d.subjectId, userId: userId(req) });
+      if (!nextSubject || (nextSubject.archived && String(existing.subjectId) !== String(nextSubject._id))) {
+        return res.status(400).json({ error: "Choose one of your active learning subjects." });
+      }
+      d.subject = nextSubject.name;
+    }
     if (d.sessionDate) d.sessionDate = new Date(d.sessionDate);
     const x = await LearningSession.findOneAndUpdate(
       { _id: req.params.id, userId: userId(req) },
@@ -471,6 +639,7 @@ app.get(
             a + (k === "transactionDate" ? x.amountPaise : x.durationMinutes),
           0,
         );
+    const weeklyBudget = await weeklyBudgetReport(uid, mondayOf(stamp));
     res.json({
       today: {
         spent: sum(expenses, "transactionDate", start, dayEnd) / 100,
@@ -501,6 +670,7 @@ app.get(
             100,
         ),
       },
+      weeklyBudget,
       categories: category.map((x) => ({ name: x._id, value: x.value / 100 })),
       subjects: subject.map((x) => ({ name: x._id, value: x.value })),
       recent: recent.map((x) => ({ ...x, amount: x.amountPaise / 100 })),
@@ -508,6 +678,24 @@ app.get(
     });
   }),
 );
+app.get("/api/budgets/weekly", asyncRoute(async (req, res) => {
+  const parsed = weekStartSchema.safeParse(req.query.weekStart);
+  if (!parsed.success) return res.status(400).json({ error: "Choose a valid Monday to view a weekly budget." });
+  res.json({ report: await weeklyBudgetReport(userId(req), parsed.data) });
+}));
+app.put("/api/budgets/weekly", asyncRoute(async (req, res) => {
+  const parsed = budgetInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter a valid weekly budget." });
+  const { weekStart, amount } = parsed.data;
+  const weekEnd = new Date(`${weekStart}T00:00:00Z`);
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+  await WeeklyBudget.findOneAndUpdate(
+    { userId: userId(req), weekStart },
+    { $set: { weekEnd: weekEnd.toISOString().slice(0, 10), amountPaise: Math.round(amount * 100) }, $setOnInsert: { userId: userId(req), weekStart } },
+    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+  );
+  res.json({ report: await weeklyBudgetReport(userId(req), weekStart) });
+}));
 app.get(
   "/api/reports/expenses",
   asyncRoute(async (req, res) => {
@@ -637,9 +825,10 @@ app.put(
 app.get(
   "/api/backup",
   asyncRoute(async (req, res) => {
-    const [expenses, learning, reviews] = await Promise.all([
+    const [expenses, learning, learningSubjects, reviews] = await Promise.all([
       Expense.find({ userId: userId(req) }).lean(),
       LearningSession.find({ userId: userId(req) }).lean(),
+      LearningSubject.find({ userId: userId(req) }).lean(),
       DailyReview.find({ userId: userId(req) }).lean(),
     ]);
     res.json({
@@ -648,6 +837,7 @@ app.get(
       settings: req.user.settings,
       expenses: expenses.map((x) => ({ ...x, amount: x.amountPaise / 100 })),
       learning,
+      learningSubjects,
       reviews,
     });
   }),
