@@ -12,7 +12,7 @@ import { asyncRoute, bounds, expenseInput, learningInput } from "./util.js";
 
 export const app = express();
 app.use(helmet());
-app.use(cors({ origin: config.frontendOrigin, credentials: true }));
+app.use(cors({ origin: config.frontendOrigin || 'https://expenses-and-learning-tracker-frontend.onrender.com', credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 const cookie = {
