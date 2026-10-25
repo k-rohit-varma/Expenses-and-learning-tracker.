@@ -12,7 +12,7 @@ import { asyncRoute, bounds, expenseInput, learningInput } from "./util.js";
 
 export const app = express();
 app.use(helmet());
-app.use(cors({ origin: config.frontendOrigin || 'https://expenses-and-learning-tracker-frontend.onrender.com', credentials: true }));
+app.use(cors({ origin: config.frontendOrigin, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 const cookie = {
@@ -24,19 +24,37 @@ const cookie = {
 };
 export const auth = asyncRoute(async (req, res, next) => {
   const token = req.cookies.lifeledger;
-  if (!token)
+  if (!token) {
+    console.warn("Authentication rejected", { reason: "cookie_missing", method: req.method, path: req.path });
     return res.status(401).json({ error: "Please sign in to continue." });
-  try {
-    const decoded = jwt.verify(token, config.authSecret);
-    req.user = await User.findById(decoded.sub);
-    if (!req.user || req.user.status !== "active" || decoded.ver !== req.user.tokenVersion) throw new Error();
-    next();
-  } catch {
-    res.clearCookie("lifeledger", cookie);
-    res
-      .status(401)
-      .json({ error: "Your session expired. Please sign in again." });
   }
+  let decoded;
+  try {
+    decoded = jwt.verify(token, config.authSecret);
+  } catch (error) {
+    const reason = error.name === "TokenExpiredError" ? "token_expired" : "token_invalid";
+    console.warn("Authentication rejected", { reason, method: req.method, path: req.path });
+    res.clearCookie("lifeledger", cookie);
+    return res.status(401).json({ error: reason === "token_expired" ? "Your session expired. Please sign in again." : "Your session is invalid. Please sign in again." });
+  }
+  try {
+    req.user = await User.findById(decoded.sub);
+  } catch (error) {
+    console.error("Authentication lookup failed", { reason: "user_lookup_error", method: req.method, path: req.path, error: error.name });
+    return res.status(503).json({ error: "Authentication is temporarily unavailable. Please try again." });
+  }
+  if (!req.user) {
+    console.warn("Authentication rejected", { reason: "user_missing", method: req.method, path: req.path });
+  } else if (req.user.status !== "active") {
+    console.warn("Authentication rejected", { reason: `account_${req.user.status || "inactive"}`, method: req.method, path: req.path });
+  } else if (decoded.ver !== req.user.tokenVersion) {
+    console.warn("Authentication rejected", { reason: "token_revoked", method: req.method, path: req.path });
+  }
+  if (!req.user || req.user.status !== "active" || decoded.ver !== req.user.tokenVersion) {
+    res.clearCookie("lifeledger", cookie);
+    return res.status(401).json({ error: "Your session is no longer valid. Please sign in again." });
+  }
+  next();
 });
 const loginLimit = rateLimit({
   windowMs: 15 * 60 * 1000,

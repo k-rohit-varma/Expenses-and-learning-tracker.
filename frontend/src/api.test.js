@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api } from './api.js';
+import { api, download } from './api.js';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -13,5 +13,11 @@ describe('API client', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
+  });
+  it('sends credentials on protected downloads too', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, blob: async () => new Blob(['csv']) });
+    vi.stubGlobal('fetch', fetch);
+    await download('/export/expenses');
+    expect(fetch.mock.calls[0][1]).toMatchObject({ credentials: 'include' });
   });
 });

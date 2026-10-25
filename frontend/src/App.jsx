@@ -54,7 +54,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { api, qs } from "./api.js";
+import { api, download, qs } from "./api.js";
 
 const money = (n) =>
   new Intl.NumberFormat("en-IN", {
@@ -107,6 +107,19 @@ const duration = (m) =>
   `${Math.floor(m / 60) ? `${Math.floor(m / 60)}h ` : ""}${m % 60 ? `${m % 60}m` : m < 60 ? `${m}m` : ""}`.trim();
 const today = dateKey(new Date());
 const OWNER_DISPLAY_NAME = "Rohit Varma Kunaparaju";
+async function saveExport(path, filename, onError = () => {}) {
+  try {
+    const blob = await download(path);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    onError(error.message);
+  }
+}
 const nav = [
   ["/", "Overview", LayoutDashboard],
   ["/expenses", "Expenses", WalletCards],
@@ -1560,12 +1573,7 @@ function RecordsPage({ type, onToast, settings }) {
             </button>
             <button
               className="text-btn export-btn"
-              onClick={() =>
-                window.open(
-                  `${import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api"}/export/${endpoint}${qs(filters)}`,
-                  "_blank",
-                )
-              }
+              onClick={() => saveExport(`/export/${endpoint}${qs(filters)}`, `${endpoint}.csv`, onToast)}
             >
               Export CSV <Download size={14} />
             </button>
@@ -1920,11 +1928,7 @@ function Reports() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [dates]);
-  const expExport = () =>
-    window.open(
-      `${import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api"}/export/expenses${qs(dates)}`,
-      "_blank",
-    );
+  const expExport = () => saveExport(`/export/expenses${qs(dates)}`, "expenses.csv");
   return (
     <>
       <PageTitle
