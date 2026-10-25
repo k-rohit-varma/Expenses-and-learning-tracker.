@@ -1,4 +1,6 @@
-const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+const BASE = import.meta.env.VITE_API_BASE_URL
+
+'https://expenses-and-learning-tracker-backend.onrender.com'|| 'http://localhost:4000/api';
 export async function api(path, options={}) {
   const { headers={}, ...requestOptions } = options;
   const res = await fetch(`${BASE}${path}`, { credentials:'include', ...requestOptions, headers:{'Content-Type':'application/json',...headers} });
