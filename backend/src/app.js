@@ -6,6 +6,8 @@ import rateLimit from "express-rate-limit";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { Expense, LearningSession, User, DailyReview, WeeklyBudget, LearningSubject } from "./models.js";
 import { asyncRoute, bounds, expenseInput, learningInput, localDay } from "./util.js";
@@ -192,7 +194,8 @@ app.use("/api", auth);
 app.use("/api", (req, res, next) => {
   if (
     ["POST", "PUT", "PATCH", "DELETE"].includes(req.method) &&
-    req.get("Origin") !== config.frontendOrigin
+    req.get("Origin") !== config.frontendOrigin &&
+    req.get("Origin") !== `${req.get("x-forwarded-proto") || req.protocol}://${req.get("host")}`
   ) {
     return res.status(403).json({ error: "Request origin is not allowed." });
   }
@@ -913,6 +916,14 @@ app.get(
       .send(lines.join("\r\n"));
   }),
 );
+const frontendDist = path.resolve(fileURLToPath(new URL("../../frontend/dist", import.meta.url)));
+app.use(express.static(frontendDist, { index: false }));
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api/")) return next();
+  res.sendFile(path.join(frontendDist, "index.html"), (error) => {
+    if (error) next(error);
+  });
+});
 app.use((err, req, res, next) => {
   if (err instanceof mongoose.Error.CastError)
     return res.status(400).json({ error: "Invalid record identifier." });

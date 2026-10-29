@@ -84,21 +84,9 @@ Backend tests cover input validation, Asia/Kolkata date boundaries, registration
 
 Create a database user limited to the LifeLedger database, enable TLS, and restrict network access to the smallest practical set of deployment addresses. Use the resulting URI only in Render secrets. Do not commit credentials.
 
-### Render API
+### Render
 
-- Create a Node web service rooted at `backend`.
-- Build command: `npm install`.
-- Start command: `npm start`.
-- Set `NODE_ENV=production`, `MONGODB_URI`, `AUTH_SECRET`, bootstrap username/password, and `FRONTEND_ORIGIN` in Render's secret environment settings.
-- Configure health check path `/api/health`.
-
-### Vercel frontend
-
-- Import the repository and set the project root to `frontend`.
-- Build command: `npm run build`; output directory: `dist`.
-- Set `VITE_API_BASE_URL` to the Render API origin plus `/api`.
-- `frontend/vercel.json` rewrites client-side routes to `index.html`.
-- Set the Render `FRONTEND_ORIGIN` to `https://expenses-and-learning-tracker-frontend.onrender.com` (also set in `render.yaml`). The backend sets the JWT cookie as `HttpOnly; Secure; SameSite=None` when `NODE_ENV=production`; if DevTools shows `SameSite=Lax`, check for a stale cookie and confirm the deployed backend has `NODE_ENV=production`.
+`render.yaml` builds the frontend and backend from the repository root and runs them as one web service. Express serves the Vite build, supports client-side page routes, and exposes the API under `/api` on the same origin. Configure `MONGODB_URI`, `AUTH_SECRET`, `INITIAL_ADMIN_USERNAME`, and `INITIAL_ADMIN_PASSWORD` as Render secrets. The health check is `/api/health`. The backend sets the session cookie as `HttpOnly; Secure; SameSite=None` in production.
 
 Deployment itself has not been performed; it requires the owner's Atlas, Render, and Vercel accounts and credentials.
 
