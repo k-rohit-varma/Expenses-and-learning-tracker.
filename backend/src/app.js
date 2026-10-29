@@ -13,12 +13,14 @@ import { addCalendarDays, budgetInput, mondayOf, weeklyBudgetReport, weekStartSc
 
 export const app = express();
 app.use(helmet());
-app.use(cors({ origin: config.frontendOrigin, credentials: true }));
+app.use(cors({ origin: config.frontendOrigin || false, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 const cookie = {
   httpOnly: true,
-  sameSite: config.production ? "none" : "lax",
+  // Production API traffic is routed through the frontend origin. Lax keeps
+  // the cookie first-party in Safari; the cookie is never needed cross-site.
+  sameSite: "lax",
   secure: config.production,
   maxAge: 7 * 86400000,
   path: "/",

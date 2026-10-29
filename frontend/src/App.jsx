@@ -171,6 +171,7 @@ const palette = [
 function App() {
   const [user, setUser] = useState(null),
     [boot, setBoot] = useState(true),
+    [authLoadError, setAuthLoadError] = useState(""),
     [toast, setToast] = useState(""),
     [mobile, setMobile] = useState(false),
     [settings, setSettings] = useState(null),
@@ -182,16 +183,23 @@ function App() {
     });
   const location = useLocation(),
     navigate = useNavigate();
-  useEffect(() => {
-    api("/auth/me")
-      .then(({ user }) => {
-        setUser(user);
-        setSettings(user.settings);
-        setTheme(user.settings?.theme || theme);
-      })
-      .catch(() => {})
-      .finally(() => setBoot(false));
-  }, []);
+  const checkSession = async () => {
+    setBoot(true);
+    setAuthLoadError("");
+    try {
+      const { user: authenticatedUser } = await api("/auth/me");
+      setUser(authenticatedUser);
+      setSettings(authenticatedUser.settings);
+      setTheme(authenticatedUser.settings?.theme || theme);
+    } catch (error) {
+      // A 401 is a confirmed signed-out state. Network and server errors are
+      // temporary failures and must not be presented as an expired session.
+      if (error.status !== 401) setAuthLoadError(error.message);
+    } finally {
+      setBoot(false);
+    }
+  };
+  useEffect(() => { checkSession(); }, []);
   useEffect(() => {
     if (toast) {
       const id = setTimeout(() => setToast(""), 3000);
@@ -226,6 +234,16 @@ function App() {
         <span>Getting your ledger ready…</span>
       </div>
     );
+  if (!user)
+    if (authLoadError)
+      return (
+        <div className="loading-screen" role="alert">
+          <div>
+            <p>We couldn’t verify your session: {authLoadError}</p>
+            <button className="primary-btn" onClick={checkSession}>Try again</button>
+          </div>
+        </div>
+      );
   if (!user)
     return (
       <Login

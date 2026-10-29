@@ -18,4 +18,4 @@ services:
       - key: INITIAL_ADMIN_PASSWORD
         sync: false
       - key: FRONTEND_ORIGIN
-        value: https://expenses-and-learning-tracker-frontend.onrender.com
+        sync: false

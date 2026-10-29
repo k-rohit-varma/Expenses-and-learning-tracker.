@@ -96,9 +96,8 @@ Create a database user limited to the LifeLedger database, enable TLS, and restr
 
 - Import the repository and set the project root to `frontend`.
 - Build command: `npm run build`; output directory: `dist`.
-- Set `VITE_API_BASE_URL` to the Render API origin plus `/api`.
-- `frontend/vercel.json` rewrites client-side routes to `index.html`.
-- Set the Render `FRONTEND_ORIGIN` to `https://expenses-and-learning-tracker-frontend.onrender.com` (also set in `render.yaml`). The backend sets the JWT cookie as `HttpOnly; Secure; SameSite=None` when `NODE_ENV=production`; if DevTools shows `SameSite=Lax`, check for a stale cookie and confirm the deployed backend has `NODE_ENV=production`.
+- Set `VITE_API_BASE_URL=/api` in Vercel so browser requests stay on the frontend origin. `frontend/vercel.json` proxies `/api/*` to `https://lifeledger-api.onrender.com/api/*` and rewrites other routes to `index.html`; update the proxy destination if the Render service has a different hostname.
+- Set Render `FRONTEND_ORIGIN` to the exact deployed Vercel origin (scheme and hostname, no path). This keeps credentialed CORS restricted to that frontend for any direct cross-origin tooling. Browser API calls use the Vercel proxy and a first-party, `HttpOnly; Secure; SameSite=Lax` cookie in production. The cookie has `Path=/`, no `Domain` attribute, and a seven-day `Max-Age` matching the JWT lifetime.
 
 Deployment itself has not been performed; it requires the owner's Atlas, Render, and Vercel accounts and credentials.
 

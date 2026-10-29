@@ -5,7 +5,7 @@ import { config } from './config.js';
 import { User, WeeklyBudget, LearningSubject } from './models.js';
 import { migrateLegacyLearningSubjects } from './learningMigration.js';
 
-if (!config.mongoUri || !config.authSecret || !config.username || !config.password) {
+if (!config.mongoUri || !config.authSecret || !config.username || !config.password || !config.frontendOrigin) {
   console.error('Missing required environment configuration. See backend/.env.example.'); process.exit(1);
 }
 await mongoose.connect(config.mongoUri);
