@@ -437,7 +437,12 @@ function Login({ onLogin, theme, onThemeToggle }) {
         body: JSON.stringify({ username, password }),
       });
       if (registering) setPendingApproval(r.username || username.trim());
-      else onLogin(r.user);
+      else {
+        // Do not render the protected app from the login response alone:
+        // confirm the browser stored and returned its session cookie first.
+        const { user: authenticatedUser } = await api("/auth/me");
+        onLogin(authenticatedUser);
+      }
     } catch (e) {
       if (e.code === "PENDING_APPROVAL") setPendingApproval(username.trim());
       else setError(e.message);

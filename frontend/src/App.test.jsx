@@ -29,6 +29,28 @@ describe('role based navigation', () => {
     expect(screen.queryByRole('link', { name: /viewers/i })).toBeNull();
   });
 
+  it('only opens the app after the login cookie is confirmed by /auth/me', async () => {
+    let sessionChecks = 0;
+    const fetch = vi.fn(async (url) => {
+      if (String(url).includes('/auth/me')) {
+        sessionChecks += 1;
+        if (sessionChecks === 1) return { ok: false, status: 401, json: async () => ({ error: 'Please sign in to continue.' }) };
+        return { ok: true, status: 200, json: async () => ({ user: { username: 'revanth', role: 'user', settings: { theme: 'light' } } }) };
+      }
+      if (String(url).includes('/auth/login')) return { ok: true, status: 200, json: async () => ({ user: { username: 'revanth', role: 'user' } }) };
+      if (String(url).includes('/dashboard/summary')) return { ok: true, status: 200, json: async () => ({ today: { spent: 0, learningMinutes: 0 }, week: { spent: 0, learningMinutes: 0 }, month: { spent: 0, learningMinutes: 0, activeDays: 0, sessions: 0 }, budget: { amount: 0, remaining: 0 }, categories: [], subjects: [], recent: [], trend: [] }) };
+      return { ok: true, status: 200, json: async () => ({ item: { reflection: '' } }) };
+    });
+    vi.stubGlobal('fetch', fetch);
+    render(<BrowserRouter><App /></BrowserRouter>);
+    fireEvent.change(await screen.findByLabelText('Username'), { target: { value: 'revanth' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'valid-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    expect(await screen.findByText('revanth')).toBeTruthy();
+    expect(fetch.mock.calls.filter(([url]) => String(url).includes('/auth/me'))).toHaveLength(2);
+    expect(fetch.mock.calls.every(([, options]) => options.credentials === 'include')).toBe(true);
+  });
+
   it('shows subjects from the authenticated account on the Learning page', async () => {
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal('fetch', vi.fn(async url => {
