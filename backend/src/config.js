@@ -6,5 +6,7 @@ export const config = {
   username: process.env.INITIAL_ADMIN_USERNAME,
   password: process.env.INITIAL_ADMIN_PASSWORD,
   production: process.env.NODE_ENV === 'production',
-  frontendOrigin: process.env.FRONTEND_ORIGIN || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5173'),
+  frontendOrigin: process.env.FRONTEND_ORIGIN || (process.env.NODE_ENV === 'production'
+    ? 'https://expenses-and-learning-tracker-frontend.onrender.com'
+    : 'http://localhost:5173'),
 };

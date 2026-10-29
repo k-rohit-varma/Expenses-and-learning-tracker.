@@ -29,16 +29,18 @@ describe('role based navigation', () => {
     expect(screen.queryByRole('link', { name: /viewers/i })).toBeNull();
   });
 
-  it('only opens the app after the login cookie is confirmed by /auth/me', async () => {
+  it('verifies the cookie with /auth/me before showing the app after login', async () => {
     let sessionChecks = 0;
     const fetch = vi.fn(async (url) => {
-      if (String(url).includes('/auth/me')) {
+      const path = String(url);
+      if (path.includes('/auth/me')) {
         sessionChecks += 1;
-        if (sessionChecks === 1) return { ok: false, status: 401, json: async () => ({ error: 'Please sign in to continue.' }) };
-        return { ok: true, status: 200, json: async () => ({ user: { username: 'revanth', role: 'user', settings: { theme: 'light' } } }) };
+        return sessionChecks === 1
+          ? { ok: false, status: 401, json: async () => ({ error: 'Please sign in to continue.' }) }
+          : { ok: true, status: 200, json: async () => ({ user: { username: 'revanth', role: 'user', settings: { theme: 'light' } } }) };
       }
-      if (String(url).includes('/auth/login')) return { ok: true, status: 200, json: async () => ({ user: { username: 'revanth', role: 'user' } }) };
-      if (String(url).includes('/dashboard/summary')) return { ok: true, status: 200, json: async () => ({ today: { spent: 0, learningMinutes: 0 }, week: { spent: 0, learningMinutes: 0 }, month: { spent: 0, learningMinutes: 0, activeDays: 0, sessions: 0 }, budget: { amount: 0, remaining: 0 }, categories: [], subjects: [], recent: [], trend: [] }) };
+      if (path.includes('/auth/login')) return { ok: true, status: 200, json: async () => ({ user: { username: 'revanth', role: 'user' } }) };
+      if (path.includes('/dashboard/summary')) return { ok: true, status: 200, json: async () => ({ today: { spent: 0, learningMinutes: 0 }, week: { spent: 0, learningMinutes: 0 }, month: { spent: 0, learningMinutes: 0, activeDays: 0, sessions: 0 }, budget: { amount: 0, remaining: 0 }, categories: [], subjects: [], recent: [], trend: [] }) };
       return { ok: true, status: 200, json: async () => ({ item: { reflection: '' } }) };
     });
     vi.stubGlobal('fetch', fetch);

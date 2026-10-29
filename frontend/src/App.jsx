@@ -171,7 +171,6 @@ const palette = [
 function App() {
   const [user, setUser] = useState(null),
     [boot, setBoot] = useState(true),
-    [authLoadError, setAuthLoadError] = useState(""),
     [toast, setToast] = useState(""),
     [mobile, setMobile] = useState(false),
     [settings, setSettings] = useState(null),
@@ -183,23 +182,16 @@ function App() {
     });
   const location = useLocation(),
     navigate = useNavigate();
-  const checkSession = async () => {
-    setBoot(true);
-    setAuthLoadError("");
-    try {
-      const { user: authenticatedUser } = await api("/auth/me");
-      setUser(authenticatedUser);
-      setSettings(authenticatedUser.settings);
-      setTheme(authenticatedUser.settings?.theme || theme);
-    } catch (error) {
-      // A 401 is a confirmed signed-out state. Network and server errors are
-      // temporary failures and must not be presented as an expired session.
-      if (error.status !== 401) setAuthLoadError(error.message);
-    } finally {
-      setBoot(false);
-    }
-  };
-  useEffect(() => { checkSession(); }, []);
+  useEffect(() => {
+    api("/auth/me")
+      .then(({ user }) => {
+        setUser(user);
+        setSettings(user.settings);
+        setTheme(user.settings?.theme || theme);
+      })
+      .catch(() => {})
+      .finally(() => setBoot(false));
+  }, []);
   useEffect(() => {
     if (toast) {
       const id = setTimeout(() => setToast(""), 3000);
@@ -234,16 +226,6 @@ function App() {
         <span>Getting your ledger ready…</span>
       </div>
     );
-  if (!user)
-    if (authLoadError)
-      return (
-        <div className="loading-screen" role="alert">
-          <div>
-            <p>We couldn’t verify your session: {authLoadError}</p>
-            <button className="primary-btn" onClick={checkSession}>Try again</button>
-          </div>
-        </div>
-      );
   if (!user)
     return (
       <Login
@@ -438,8 +420,7 @@ function Login({ onLogin, theme, onThemeToggle }) {
       });
       if (registering) setPendingApproval(r.username || username.trim());
       else {
-        // Do not render the protected app from the login response alone:
-        // confirm the browser stored and returned its session cookie first.
+        // Confirm Safari stored and returned the cookie before entering the app.
         const { user: authenticatedUser } = await api("/auth/me");
         onLogin(authenticatedUser);
       }

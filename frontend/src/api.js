@@ -1,6 +1,9 @@
-// Prefer the configured API URL in every environment. Set this to `/api` only
-// when the hosting platform applies the same-origin proxy in vercel.json.
-const BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : '/api');
+// Production auth always goes through the frontend-origin proxy so Safari
+// treats the session cookie as first-party. Only development uses an absolute
+// API URL.
+const BASE = import.meta.env.DEV
+  ? (import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api')
+  : '/api';
 export async function api(path, options={}) {
   const { headers={}, ...requestOptions } = options;
   const res = await fetch(`${BASE}${path}`, { credentials:'include', ...requestOptions, headers:{'Content-Type':'application/json',...headers} });
