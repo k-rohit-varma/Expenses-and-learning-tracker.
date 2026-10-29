@@ -13,16 +13,12 @@ import { addCalendarDays, budgetInput, mondayOf, weeklyBudgetReport, weekStartSc
 
 export const app = express();
 app.use(helmet());
-app.use("/api/auth", (req, res, next) => {
-  res.set("Cache-Control", "no-store");
-  next();
-});
 app.use(cors({ origin: config.frontendOrigin, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 const cookie = {
   httpOnly: true,
-  sameSite: "lax",
+  sameSite: config.production ? "none" : "lax",
   secure: config.production,
   maxAge: 7 * 86400000,
   path: "/",

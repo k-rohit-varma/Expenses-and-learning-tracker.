@@ -1,9 +1,4 @@
-// Production auth always goes through the frontend-origin proxy so Safari
-// treats the session cookie as first-party. Only development uses an absolute
-// API URL.
-const BASE = import.meta.env.DEV
-  ? (import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api')
-  : '/api';
+const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
 export async function api(path, options={}) {
   const { headers={}, ...requestOptions } = options;
   const res = await fetch(`${BASE}${path}`, { credentials:'include', ...requestOptions, headers:{'Content-Type':'application/json',...headers} });

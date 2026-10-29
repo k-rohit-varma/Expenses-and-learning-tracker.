@@ -419,11 +419,7 @@ function Login({ onLogin, theme, onThemeToggle }) {
         body: JSON.stringify({ username, password }),
       });
       if (registering) setPendingApproval(r.username || username.trim());
-      else {
-        // Confirm Safari stored and returned the cookie before entering the app.
-        const { user: authenticatedUser } = await api("/auth/me");
-        onLogin(authenticatedUser);
-      }
+      else onLogin(r.user);
     } catch (e) {
       if (e.code === "PENDING_APPROVAL") setPendingApproval(username.trim());
       else setError(e.message);
