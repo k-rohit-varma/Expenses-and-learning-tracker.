@@ -92,12 +92,10 @@ Create a database user limited to the LifeLedger database, enable TLS, and restr
 - Set `NODE_ENV=production`, `MONGODB_URI`, `AUTH_SECRET`, bootstrap username/password, and `FRONTEND_ORIGIN` in Render's secret environment settings.
 - Configure health check path `/api/health`.
 
-### Vercel frontend
+### Frontend
 
-- Import the repository and set the project root to `frontend`.
-- Build command: `npm run build`; output directory: `dist`.
-- Set `VITE_API_BASE_URL=/api` in Vercel so browser requests stay on the frontend origin. `frontend/vercel.json` proxies `/api/*` to `https://lifeledger-api.onrender.com/api/*` and rewrites other routes to `index.html`; update the proxy destination if the Render service has a different hostname.
-- Set Render `FRONTEND_ORIGIN` to the exact deployed Vercel origin (scheme and hostname, no path). This keeps credentialed CORS restricted to that frontend for any direct cross-origin tooling. Browser API calls use the Vercel proxy and a first-party, `HttpOnly; Secure; SameSite=Lax` cookie in production. The cookie has `Path=/`, no `Domain` attribute, and a seven-day `Max-Age` matching the JWT lifetime.
+- `render.yaml` defines the Render static frontend alongside the API. It proxies `/api/*` to the backend and sets `VITE_API_BASE_URL=/api`, keeping browser requests and the `HttpOnly; Secure; SameSite=Lax` session cookie on the frontend origin. The cookie has `Path=/`, no `Domain` attribute, and a seven-day `Max-Age` matching the JWT lifetime.
+- For a Vercel frontend instead, use `frontend/vercel.json` for the same `/api/*` proxy and set `VITE_API_BASE_URL=/api`. Set backend `FRONTEND_ORIGIN` to that exact Vercel origin. The proxy destination must match the deployed API hostname.
 
 Deployment itself has not been performed; it requires the owner's Atlas, Render, and Vercel accounts and credentials.
 
