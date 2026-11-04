@@ -394,17 +394,19 @@ app.get("/api/users", requireOwner, asyncRoute(async (req, res) => {
   if (["pending_approval", "active", "blocked", "rejected"].includes(req.query.status)) query.status = req.query.status;
   else if (req.query.status && req.query.status !== "all") return res.status(400).json({ error: "Invalid account status filter." });
   if (req.query.search) query.username = new RegExp(String(req.query.search).slice(0, 50).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-  const [items, total] = await Promise.all([
+  const [items, total, admin] = await Promise.all([
     User.find(query).select("username role status createdAt lastLoginAt").sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
     User.countDocuments(query),
+    User.findOne({ role: "owner" }).select("username role status createdAt lastLoginAt").lean(),
   ]);
-  res.json({ items, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+  res.json({ items, admin, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
 }));
 app.get("/api/users/pending", requireOwner, asyncRoute(async (_req, res) => {
   const items = await User.find({ role: "user", status: "pending_approval" }).select("username role status createdAt lastLoginAt").sort({ createdAt: 1 }).lean();
   res.json({ items });
 }));
 const changeUserStatus = (from, status) => asyncRoute(async (req, res) => {
+  if (String(req.params.id) === String(userId(req))) return res.status(403).json({ error: "You cannot change your own account status." });
   const target = await User.findOne({ _id: req.params.id, role: "user" });
   if (!target) return res.status(404).json({ error: "User not found." });
   if (target.status !== from) return res.status(409).json({ error: `Only ${from.replaceAll("_", " ")} accounts can be changed this way.` });
