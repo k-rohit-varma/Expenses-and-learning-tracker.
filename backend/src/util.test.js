@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import jwt from "jsonwebtoken";
 import { bounds, expenseInput, learningInput, localDay } from "./util.js";
-import { auth, learningSubjectInput, requireOwner, subjectPatchInput, zRegister } from "./app.js";
+import { auth, learningSubjectInput, noteInput, requireOwner, subjectPatchInput, zRegister } from "./app.js";
 import { config } from "./config.js";
-import { LearningSession, LearningSubject, User } from "./models.js";
+import { LearningSession, LearningSubject, Note, User } from "./models.js";
 test("expense validation rejects zero, negative, and non-finite amounts", () => {
   for (const amount of [0, -1, Infinity, NaN])
     assert.equal(
@@ -48,6 +48,16 @@ test("learning subject inputs validate custom fields and reject client ownership
   assert.equal(learningSubjectInput.safeParse({ name: "Java", color: "blue" }).success, false);
   assert.equal(learningSubjectInput.safeParse({ name: "Java", userId: "0123456789abcdef01234567" }).success, false);
   assert.equal(subjectPatchInput.safeParse({ archived: true }).success, true);
+});
+test("notes require content, validate optional fields, and are indexed by owner and subject", () => {
+  const subjectId = "0123456789abcdef01234567";
+  assert.equal(noteInput.safeParse({ content: "An idea" }).success, true);
+  assert.equal(noteInput.safeParse({ title: "", content: "  " }).success, false);
+  assert.equal(noteInput.safeParse({ content: "An idea", pinned: "yes" }).success, false);
+  assert.equal(noteInput.safeParse({ content: "An idea", userId: subjectId }).success, false);
+  assert.equal(Note.schema.path("userId").isRequired, true);
+  assert.equal(Note.schema.path("subjectId").options.ref, "LearningSubject");
+  assert.ok(Note.schema.indexes().some(([keys]) => keys.userId === 1 && keys.subjectId === 1));
 });
 test("date bounds use Asia/Kolkata midnight and exclusive next midnight", () => {
   const b = bounds("2026-10-25", "2026-10-25");

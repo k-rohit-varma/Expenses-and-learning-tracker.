@@ -107,6 +107,14 @@ const learningSubjectSchema = new Schema({
   weeklyGoalMinutes: { type: Number, min: 1, max: 10080, default: null },
 }, { timestamps: true });
 learningSubjectSchema.index({ userId: 1, name: 1 }, { unique: true, collation: { locale: "en", strength: 2 } });
+const noteSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+  subjectId: { type: Schema.Types.ObjectId, ref: "LearningSubject", required: true, index: true },
+  title: { type: String, trim: true, maxlength: 160, default: "" },
+  content: { type: String, required: true, trim: true, maxlength: 20000 },
+  pinned: { type: Boolean, default: false },
+}, { timestamps: true });
+noteSchema.index({ userId:  1, subjectId: 1, pinned: -1, updatedAt: -1 });
 export const Expense =
   mongoose.models.Expense || model("Expense", expenseSchema);
 export const LearningSession =
@@ -116,3 +124,4 @@ export const DailyReview =
   mongoose.models.DailyReview || model("DailyReview", reviewSchema);
 export const WeeklyBudget = mongoose.models.WeeklyBudget || model("WeeklyBudget", weeklyBudgetSchema);
 export const LearningSubject = mongoose.models.LearningSubject || model("LearningSubject", learningSubjectSchema);
+export const Note = mongoose.models.Note || model("Note", noteSchema);

@@ -32,6 +32,7 @@ import {
   LogOut,
   Menu,
   Plus,
+  Pin,
   Search,
   Settings as SettingsIcon,
   Sparkles,
@@ -42,6 +43,8 @@ import {
   Moon,
   Trash2,
   Edit2,
+  Eye,
+  EyeOff,
   Users,
 } from "lucide-react";
 import {
@@ -408,6 +411,7 @@ function Login({ onLogin, theme, onThemeToggle }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [registering, setRegistering] = useState(false),
+    [showPassword, setShowPassword] = useState(false),
     [pendingApproval, setPendingApproval] = useState("");
   async function submit(e) {
     e.preventDefault();
@@ -463,9 +467,10 @@ function Login({ onLogin, theme, onThemeToggle }) {
           </label>
           <label>
             Password
+            <span className="password-input-wrap">
             <input
               autoComplete={registering ? "new-password" : "current-password"}
-              type="password"
+              type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -473,6 +478,8 @@ function Login({ onLogin, theme, onThemeToggle }) {
               maxLength={72}
               placeholder="Your password"
             />
+            <button type="button" className="password-toggle" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+            </span>
           </label>
           {error && <div className="form-error">{error}</div>}
           <button disabled={busy} className="btn primary full">
@@ -1928,6 +1935,7 @@ function LearningSubjectPage({ onToast, settings }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
+  const [activeTab, setActiveTab] = useState("sessions");
   const load = async () => { try { setData(await api(`/learning/subjects/${subjectId}`)); setError(""); } catch (e) { setError(e.message); } };
   useEffect(() => { load(); }, [subjectId]);
   if (!data) return error ? <div className="inline-error">{error}<button onClick={load}>Try again</button></div> : <div className="table-loading">Loading subject…</div>;
@@ -1937,11 +1945,63 @@ function LearningSubjectPage({ onToast, settings }) {
     <PageTitle eyebrow="SUBJECT LEARNING TRACK" title={subject.name} description={subject.description || "Your sessions and progress in this subject."} action={<><button className="btn secondary" onClick={() => setEditing(true)}><Edit2 size={14} /> Edit subject</button><button className="btn primary" disabled={subject.archived} onClick={() => document.getElementById("subject-session-add")?.click()}><Plus size={15} /> Add session</button></>} />
     <div className="subject-detail-banner"><span className="subject-card-icon large" style={{ color: subject.color, background: `${subject.color}1c` }}><Icon size={25} /></span><div><span className="eyebrow">SUBJECT OVERVIEW</span><h2>{subject.name}</h2><p>{subject.description || "No description added."}</p><p className="subject-latest">Most recent: {data.recentSession ? `${data.recentSession.topic || "Learning session"} · ${niceDate(data.recentSession.sessionDate)}` : "No session recorded yet."}</p></div>{subject.weeklyGoalMinutes && <div className="subject-detail-goal"><span>This week’s goal</span><strong>{duration(subject.weekMinutes)} / {duration(subject.weeklyGoalMinutes)}</strong><div className="bar-track"><i style={{ width: `${Math.min(100, subject.weekMinutes / subject.weeklyGoalMinutes * 100)}%`, background: subject.color }} /></div></div>}</div>
     <div className="stat-grid learning-stats"><Stat label="Total time invested" value={duration(subject.totalMinutes)} sub="Across all sessions" icon={Clock3} color="blue" /><Stat label="Sessions" value={subject.sessionCount} sub={subject.lastStudied ? `Last studied ${relativeStudyDate(subject.lastStudied)}` : "No sessions recorded"} icon={BookOpen} color="purple" /><Stat label="This week" value={duration(subject.weekMinutes)} sub="Monday through today" icon={CalendarDays} color="green" /><Stat label="This month" value={duration(subject.monthMinutes)} sub="Learning time recorded" icon={Sparkles} color="orange" /></div>
+    <div className="subject-tabs" role="tablist" aria-label="Subject sections"><button type="button" role="tab" aria-selected={activeTab === "sessions"} className={activeTab === "sessions" ? "active" : ""} onClick={() => setActiveTab("sessions")}>Sessions</button><button type="button" role="tab" aria-selected={activeTab === "notes"} className={activeTab === "notes" ? "active" : ""} onClick={() => setActiveTab("notes")}>Notes</button></div>
+    {activeTab === "notes" ? <SubjectNotes subject={subject} onToast={onToast} /> : <>
     <div className="dashboard-grid report-grid subject-chart-grid"><Card><SectionHead title="Daily learning this week" sub="Minutes invested each day" /><ResponsiveContainer width="100%" height={240}><BarChart data={data.dailyTrend}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="date" tickFormatter={(value) => new Intl.DateTimeFormat("en-IN", { weekday: "short", timeZone: "UTC" }).format(new Date(`${value}T12:00:00Z`))} tickLine={false} axisLine={false} /><YAxis /><Tooltip formatter={(value) => duration(value)} /><Bar dataKey="minutes" name="Learning" fill={subject.color} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></Card><Card><SectionHead title="Weekly trend" sub="Last eight weeks" /><ResponsiveContainer width="100%" height={240}><AreaChart data={data.weeklyTrend}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="weekStart" tickFormatter={(value) => niceDate(`${value}T12:00:00`).split(",")[0]} tickLine={false} axisLine={false} /><YAxis /><Tooltip formatter={(value) => duration(value)} /><Area dataKey="minutes" name="Learning" stroke={subject.color} fill={subject.color} fillOpacity={0.16} /></AreaChart></ResponsiveContainer></Card><Card><SectionHead title="Monthly trend" sub="Last six months" /><ResponsiveContainer width="100%" height={240}><BarChart data={data.monthlyTrend}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="month" tickFormatter={(value) => new Intl.DateTimeFormat("en-IN", { month: "short", timeZone: "UTC" }).format(new Date(`${value}-15T12:00:00Z`))} tickLine={false} axisLine={false} /><YAxis /><Tooltip formatter={(value) => duration(value)} /><Bar dataKey="minutes" name="Learning" fill={subject.color} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></Card></div>
     <div className="subject-history-head"><div><h2>Learning history</h2><p>Sessions for {subject.name}, newest first.</p></div></div>
     <RecordsPage type="learning" onToast={onToast} settings={settings} fixedSubjectId={subject._id} onChanged={load} />
+    </>}
     {editing && <SubjectEditor subject={subject} onClose={() => setEditing(false)} onSave={async (values) => { await api(`/learning/subjects/${subject._id}`, { method: "PATCH", body: JSON.stringify(values) }); setEditing(false); onToast("Subject updated."); load(); }} />}
   </>;
+}
+
+function SubjectNotes({ subject, onToast }) {
+  const [items, setItems] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState(""), [search, setSearch] = useState(""), [draft, setDraft] = useState(null), [saving, setSaving] = useState(false), [deleting, setDeleting] = useState(null);
+  const storageKey = `lifeledger-note-draft:${subject._id}`;
+  const load = async () => {
+    setLoading(true);
+    try { const result = await api(`/learning/subjects/${subject._id}/notes`); setItems(result.items); setError(""); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [subject._id]);
+  useEffect(() => {
+    if (!draft) return;
+    localStorage.setItem(storageKey, JSON.stringify({ title: draft.title, content: draft.content, pinned: draft.pinned, noteId: draft._id || null }));
+    if (!draft.content.trim()) return;
+    const timer = setTimeout(async () => {
+      setSaving(true);
+      try {
+        const body = JSON.stringify({ title: draft.title, content: draft.content, pinned: draft.pinned });
+        const result = draft._id
+          ? await api(`/learning/notes/${draft._id}`, { method: "PUT", body })
+          : await api(`/learning/subjects/${subject._id}/notes`, { method: "POST", body });
+        setItems((current) => [result.note, ...current.filter((item) => item._id !== result.note._id)].sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.updatedAt) - new Date(a.updatedAt)));
+        setDraft((current) => current && !current._id ? { ...current, _id: result.note._id } : current);
+        localStorage.removeItem(storageKey);
+        setError("");
+      } catch (e) { setError(e.message); }
+      finally { setSaving(false); }
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [draft?.title, draft?.content, draft?.pinned, draft?._id, subject._id]);
+  const startNew = () => {
+    try { const saved = JSON.parse(localStorage.getItem(storageKey)); setDraft(saved ? { ...saved, _id: saved.noteId || undefined } : { title: "", content: "", pinned: false }); }
+    catch { setDraft({ title: "", content: "", pinned: false }); }
+  };
+  const shown = items.filter((note) => `${note.title} ${note.content}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+  async function removeNote(note) {
+    try { await api(`/learning/notes/${note._id}`, { method: "DELETE" }); setItems((current) => current.filter((item) => item._id !== note._id)); setDeleting(null); onToast("Note deleted."); }
+    catch (e) { setError(e.message); setDeleting(null); }
+  }
+  return <section className="notes-section">
+    <div className="notes-toolbar"><div><h2>Subject notes</h2><p>Ideas saved separately from your study sessions.</p></div><button type="button" className="btn primary" onClick={startNew}><Plus size={15} /> New note</button></div>
+    <label className="notes-search"><Search size={15} /><input aria-label="Search notes" placeholder="Search notes" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
+    {error && <div className="inline-error">{error}<button type="button" onClick={load}>Retry</button></div>}
+    {draft && <div className="card note-editor"><label>Title <span className="optional">Optional</span><input maxLength="160" placeholder="A title for this note" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label><label>Note<textarea autoFocus rows="9" maxLength="20000" required placeholder="Jot down your ideas…" value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} /></label><div className="note-editor-foot"><span>{saving ? "Saving…" : draft._id ? "Autosaved" : "Draft saved on this device"}</span><button type="button" className="btn ghost" onClick={() => { setDraft(null); localStorage.removeItem(storageKey); }}>Done</button></div></div>}
+    {loading ? <div className="table-loading">Loading notes…</div> : shown.length ? <div className="notes-grid">{shown.map((note) => <article className="card note-card" key={note._id}><div className="note-card-head"><strong>{note.title || "Untitled note"}</strong><button type="button" className={`icon-btn small ${note.pinned ? "note-pinned" : ""}`} aria-label={note.pinned ? "Unpin note" : "Pin note"} onClick={() => setDraft({ ...note, pinned: !note.pinned })}><Pin size={14} /></button><button type="button" className="icon-btn small" aria-label="Edit note" onClick={() => setDraft(note)}><Edit2 size={14} /></button><button type="button" className="icon-btn small" aria-label="Delete note" onClick={() => setDeleting(note)}><Trash2 size={14} /></button></div><p className="note-preview">{note.content}</p><div className="note-timestamps"><span>Created {new Date(note.createdAt).toLocaleString()}</span><span>Updated {new Date(note.updatedAt).toLocaleString()}</span></div></article>)}</div> : !draft && <div className="card notes-empty"><FileText size={23} /><h3>{search ? "No matching notes" : "Jot down your first idea"}</h3><p>{search ? "Try another search." : "Keep thoughts, questions, and ideas here, separate from your sessions."}</p>{!search && <button type="button" className="btn secondary" onClick={startNew}>Write a note</button>}</div>}
+    {deleting && <ConfirmDialog title="Delete this note?" text="This note will be permanently removed." onClose={() => setDeleting(null)} onConfirm={() => removeNote(deleting)} />}
+  </section>;
 }
 function ConfirmDialog({ text, onClose, onConfirm, title = "Delete this record?", confirmLabel = "Delete", busy = false }) {
   return (

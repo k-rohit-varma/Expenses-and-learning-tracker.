@@ -9,7 +9,7 @@ import mongoose from "mongoose";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
-import { Expense, LearningSession, User, DailyReview, WeeklyBudget, LearningSubject } from "./models.js";
+import { Expense, LearningSession, User, DailyReview, WeeklyBudget, LearningSubject, Note } from "./models.js";
 import { asyncRoute, bounds, expenseInput, learningInput, localDay } from "./util.js";
 import { addCalendarDays, budgetInput, mondayOf, weeklyBudgetReport, weekStartSchema } from "./budget.js";
 
@@ -341,6 +341,51 @@ app.patch("/api/learning/subjects/:id", asyncRoute(async (req, res) => {
     if (error.code === 11000) return res.status(409).json({ error: "You already have a subject with that name." });
     throw error;
   }
+}));
+export const noteInput = zod.object({
+  title: zod.string().trim().max(160).optional().default(""),
+  content: zod.string().trim().min(1, "Write something in your note.").max(20000),
+  pinned: zod.boolean().optional().default(false),
+}).strict();
+app.get("/api/learning/subjects/:subjectId/notes", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.subjectId)) return res.status(404).json({ error: "Learning subject not found." });
+  const subject = await LearningSubject.findOne({ _id: req.params.subjectId, userId: userId(req) }).select("_id").lean();
+  if (!subject) return res.status(404).json({ error: "Learning subject not found." });
+  const items = await Note.find({ userId: userId(req), subjectId: subject._id }).sort({ pinned: -1, updatedAt: -1 }).lean();
+  res.json({ items });
+}));
+app.post("/api/learning/subjects/:subjectId/notes", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.subjectId)) return res.status(404).json({ error: "Learning subject not found." });
+  const parsed = noteInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter valid note details." });
+  const subject = await LearningSubject.findOne({ _id: req.params.subjectId, userId: userId(req) }).select("_id").lean();
+  if (!subject) return res.status(404).json({ error: "Learning subject not found." });
+  const note = await Note.create({ ...parsed.data, userId: userId(req), subjectId: subject._id });
+  res.status(201).json({ note });
+}));
+app.put("/api/learning/notes/:noteId", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.noteId)) return res.status(404).json({ error: "Note not found." });
+  const parsed = noteInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter valid note details." });
+  const note = await Note.findOneAndUpdate({ _id: req.params.noteId, userId: userId(req) }, parsed.data, { new: true, runValidators: true });
+  if (!note) return res.status(404).json({ error: "Note not found." });
+  res.json({ note });
+}));
+app.delete("/api/learning/notes/:noteId", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.noteId)) return res.status(404).json({ error: "Note not found." });
+  const note = await Note.findOneAndDelete({ _id: req.params.noteId, userId: userId(req) });
+  if (!note) return res.status(404).json({ error: "Note not found." });
+  res.json({ ok: true });
+}));
+app.delete("/api/learning/subjects/:id", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Learning subject not found." });
+  const subject = await LearningSubject.findOneAndDelete({ _id: req.params.id, userId: userId(req) });
+  if (!subject) return res.status(404).json({ error: "Learning subject not found." });
+  await Promise.all([
+    Note.deleteMany({ userId: userId(req), subjectId: subject._id }),
+    LearningSession.updateMany({ userId: userId(req), subjectId: subject._id }, { $set: { subjectId: null } }),
+  ]);
+  res.json({ ok: true });
 }));
 app.get("/api/users", requireOwner, asyncRoute(async (req, res) => {
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
