@@ -25,6 +25,7 @@ import {
   CircleHelp,
   Clock3,
   Download,
+  Dumbbell,
   Ellipsis,
   FileText,
   Filter,
@@ -144,6 +145,7 @@ const nav = [
   ["/expenses", "Expenses", WalletCards],
   ["/budget", "Budget", Activity],
   ["/learning", "Learning", BookOpen],
+  ["/fitness", "Fitness", Dumbbell],
   ["/calendar", "Calendar", CalendarDays],
   ["/reports", "Reports", ChartNoAxesCombined],
   ["/settings", "Settings", SettingsIcon],
@@ -362,6 +364,7 @@ function App() {
               path="/learning"
               element={<Learning onToast={setToast} />}
             />
+            <Route path="/fitness" element={<Fitness />} />
             <Route path="/calendar" element={<Calendar onToast={setToast} />} />
             <Route path="/reports" element={<Reports />} />
             <Route
@@ -398,6 +401,105 @@ function App() {
       )}
     </div>
   );
+}
+
+function Fitness() {
+  const [summary, setSummary] = useState(null), [exercises, setExercises] = useState([]), [history, setHistory] = useState({ items: [], pagination: {} }), [runs, setRuns] = useState({ items: [], pagination: {} });
+  const [loading, setLoading] = useState(true), [error, setError] = useState(""), [dialog, setDialog] = useState(null);
+  const [search, setSearch] = useState(""), [query, setQuery] = useState(""), [page, setPage] = useState(1), [from, setFrom] = useState(""), [to, setTo] = useState(""), [exerciseFilter,setExerciseFilter]=useState("");
+  async function refresh() {
+    setLoading(true); setError("");
+    try {
+      const [s, e] = await Promise.all([api("/fitness/summary"), api("/fitness/exercises")]);
+      setSummary(s); setExercises(e.items);
+      const [h, r] = await Promise.all([api(`/fitness/workouts${qs({ search: query, exercise: exerciseFilter, from, to, page, limit: 10 })}`), api(`/fitness/runs${qs({ page: 1, limit: 10 })}`)]); setHistory(h); setRuns(r);
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { const id = setTimeout(() => { setQuery(search); setPage(1); }, 1500); return () => clearTimeout(id); }, [search]);
+  useEffect(() => { refresh(); }, [query, page, from, to, exerciseFilter]);
+  async function removeWorkout(item) {
+    if (!window.confirm("Delete this workout and its exercise details?")) return;
+    try { await api(`/fitness/workouts/${item._id}`, { method: "DELETE" }); setDialog(null); await refresh(); }
+    catch (e) { setError(e.message); }
+  }
+  async function removeRun(item) {
+    if (!window.confirm("Delete this running session?")) return;
+    try { await api(`/fitness/runs/${item._id}`, { method: "DELETE" }); await refresh(); }
+    catch (e) { setError(e.message); }
+  }
+  async function removeExercise(item) {
+    if (!window.confirm(`Delete ${item.name} from your custom exercise library? Existing workout history will keep its saved exercise details.`)) return;
+    try { await api(`/fitness/exercises/${item.id}`, { method: "DELETE" }); await refresh(); }
+    catch (e) { setError(e.message); }
+  }
+  const pace = summary?.averagePaceMinutesPerKm;
+  return <>
+    <PageTitle eyebrow="YOUR WELLBEING" title="Fitness" description="Track your workouts, running, and activity progress." action={<div className="fitness-actions"><button className="btn secondary" onClick={() => setDialog({ type: "run" })}><Activity size={15} /> Add Run</button><button className="btn primary" onClick={() => setDialog({ type: "workout" })}><Plus size={16} /> Add Workout</button></div>} />
+    {error && <div className="inline-error">{error}<button onClick={() => setError("")}>Dismiss</button></div>}
+    {loading && !summary ? <div className="table-loading">Loading fitness records…</div> : summary && <>
+      <div className="stat-grid fitness-stats">
+        <Stat label="Total workouts" value={summary.totals.workouts} sub="Completed sessions" icon={Dumbbell} color="blue" />
+        <Stat label="Running distance" value={`${summary.totals.runningDistanceKm.toFixed(1)} km`} sub={`${summary.week.distanceKm.toFixed(1)} km this week`} icon={Activity} color="purple" />
+        <Stat label="Workout duration" value={duration(summary.totals.durationMinutes)} sub="Recorded exercise time" icon={Clock3} color="green" />
+        <Stat label="Active days" value={summary.totals.activeDays} sub={`${summary.totals.streak} day current streak`} icon={CalendarDays} color="orange" />
+      </div>
+      <div className="dashboard-grid fitness-dashboard-grid">
+        <Card className="fitness-panel"><SectionHead title="Today's activity" sub={niceDate(`${today}T12:00:00`)} />
+          <div className="fitness-today"><div><strong>{duration(summary.today.durationMinutes)}</strong><span>Exercise time</span></div><div><strong>{summary.today.exerciseCount}</strong><span>Exercises</span></div><div><strong>{summary.today.runningDistanceKm.toFixed(1)} km</strong><span>Running · {duration(summary.today.runningMinutes)}</span></div></div>
+          {!summary.today.workoutCount && !summary.today.runningMinutes && <p className="fitness-hint">No activity recorded today. Your next session will show up here.</p>}
+        </Card>
+        <Card className="fitness-panel"><SectionHead title="This week" sub="Monday through today" />
+          <div className="fitness-week-stats"><div><span>Workouts</span><strong>{summary.week.workouts}</strong></div><div><span>Running</span><strong>{summary.week.distanceKm.toFixed(1)} km</strong></div><div><span>Time</span><strong>{duration(summary.week.durationMinutes)}</strong></div><div><span>Streak</span><strong>{summary.totals.streak} days</strong></div></div>
+        </Card>
+      </div>
+      <div className="dashboard-grid fitness-charts">
+        <Card className="fitness-panel"><SectionHead title="Weekly activity" sub="Sessions and exercise minutes" />{summary.weekly.some(x => x.workouts || x.runs) ? <ResponsiveContainer width="100%" height={220}><BarChart data={summary.weekly}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5"/><XAxis dataKey="date" tickFormatter={x => new Intl.DateTimeFormat("en-IN", { weekday: "short", timeZone: "UTC" }).format(new Date(`${x}T12:00:00Z`))} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }}/><YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }}/><Tooltip labelFormatter={x => niceDate(`${x}T12:00:00`)} /><Bar dataKey="workouts" name="Workouts" fill="#6984e8" radius={[4,4,0,0]}/><Bar dataKey="runs" name="Runs" fill="#49a28a" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer> : <div className="fitness-chart-empty">No activity recorded this week yet.</div>}</Card>
+        <Card className="fitness-panel"><SectionHead title="Monthly running" sub="Distance over the last six months" />{summary.monthly.some(x => x.distanceKm) ? <ResponsiveContainer width="100%" height={220}><AreaChart data={summary.monthly}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5"/><XAxis dataKey="month" tickFormatter={x => new Intl.DateTimeFormat("en-IN", { month: "short", timeZone: "UTC" }).format(new Date(`${x}-15T12:00:00Z`))} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }}/><YAxis unit=" km" tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: "var(--muted)" }}/><Tooltip formatter={x => [`${Number(x).toFixed(1)} km`, "Distance"]}/><Area type="monotone" dataKey="distanceKm" stroke="#6682e5" fill="#6682e526"/></AreaChart></ResponsiveContainer> : <div className="fitness-chart-empty">Your running distance trend will appear after your first run.</div>}</Card>
+      </div>
+      <div className="dashboard-grid fitness-lower">
+        <Card className="fitness-panel"><SectionHead title="Running progress" sub="Your all-time running summary" />{summary.totals.runningDistanceKm ? <div className="fitness-run-summary"><div><strong>{summary.totals.runningDistanceKm.toFixed(1)} km</strong><span>Total distance</span></div><div><strong>{summary.month.runningDistanceKm.toFixed(1)} km</strong><span>This month</span></div><div><strong>{pace ? `${Math.floor(pace)}:${String(Math.round((pace % 1) * 60)).padStart(2, "0")} /km` : "—"}</strong><span>Average pace</span></div></div> : <div className="fitness-chart-empty">Log a run to start your running progress.</div>}</Card>
+        <Card className="fitness-panel"><SectionHead title="Exercise categories" sub="Exercises completed" />{summary.categories.length ? <div className="fitness-category-list">{summary.categories.map((x, i) => <div key={x.name}><span><i style={{ background: palette[i % palette.length] }}/>{x.name}</span><strong>{x.value}</strong></div>)}</div> : <div className="fitness-chart-empty">Category activity will appear here after a workout.</div>}</Card>
+      </div>
+      <Card className="fitness-library"><div className="fitness-history-head"><div><h2>Custom exercise library</h2><p>Your reusable exercises stay available in future workouts.</p></div><button className="btn secondary small-btn" onClick={() => setDialog({ type: "exercise" })}><Plus size={14}/> Add custom exercise</button></div>{exercises.filter(x=>x.custom).length ? <div className="fitness-library-list">{exercises.filter(x=>x.custom).map(x=><div key={x.id}><span><strong>{x.name}</strong><small>{x.category} · {x.type}</small></span><button className="icon-btn small" aria-label={`Edit ${x.name}`} onClick={()=>setDialog({type:"exercise",item:x})}><Edit2 size={14}/></button><button className="icon-btn small" aria-label={`Delete ${x.name}`} onClick={()=>removeExercise(x)}><Trash2 size={14}/></button></div>)}</div> : <div className="fitness-library-empty">No custom exercises yet. Add one here or choose “Other” while creating a workout.</div>}</Card>
+      <Card className="fitness-history"><div className="fitness-history-head"><div><h2>Workout history</h2><p>Browse, edit, or remove recorded sessions.</p></div><span className="fitness-history-filter"><label>From<input type="date" value={from} onChange={e => { setFrom(e.target.value); setPage(1); }}/></label><label>To<input type="date" value={to} onChange={e => { setTo(e.target.value); setPage(1); }}/></label></span></div>
+        <div className="fitness-history-controls"><label className="fitness-search"><Search size={15}/><input aria-label="Search workouts" placeholder="Search workouts or exercises…" value={search} onChange={e => setSearch(e.target.value)}/></label><label className="fitness-exercise-filter">Exercise<select aria-label="Filter by exercise" value={exerciseFilter} onChange={e=>{setExerciseFilter(e.target.value);setPage(1);}}><option value="">All exercises</option>{exercises.map(x=><option key={x.id} value={x.name}>{x.name}</option>)}</select></label></div>
+        {history.items.length ? <div className="fitness-history-list">{history.items.map(w => <div className="fitness-history-item" key={w._id}><div className="fitness-history-date"><strong>{niceDate(w.workoutDate)}</strong><span>{w.exercises.length} {w.exercises.length === 1 ? "exercise" : "exercises"} · {duration(w.exercises.reduce((n, x) => n + (x.durationMinutes || 0), 0))}</span></div><div className="fitness-history-exercises">{w.exercises.map(x => x.name).join(" · ")}</div><div className="row-actions"><button aria-label="Edit workout" onClick={() => setDialog({ type: "workout", item: w })}><Edit2 size={14}/></button><button aria-label="Delete workout" onClick={() => removeWorkout(w)}><Trash2 size={14}/></button></div></div>)}</div> : <div className="fitness-history-empty">No workouts match this filter.</div>}
+        <div className="pagination"><span>{history.pagination?.total || 0} workouts</span><div><button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page"><ChevronLeft size={15}/></button><span>Page {page} of {Math.max(1, history.pagination?.pages || 1)}</span><button disabled={page >= (history.pagination?.pages || 1)} onClick={() => setPage(page + 1)} aria-label="Next page"><ChevronRight size={15}/></button></div></div>
+      </Card>
+      <Card className="fitness-history fitness-run-history"><div className="fitness-history-head"><div><h2>Running history</h2><p>Distance, duration, and calculated pace for each session.</p></div></div>{runs.items.length ? runs.items.map(r=><div className="fitness-history-item" key={r._id}><div className="fitness-history-date"><strong>{niceDate(r.sessionDate)}</strong><span>{duration(r.durationMinutes)} · {Number(r.distanceKm).toFixed(2)} km</span></div><div className="fitness-history-exercises">Pace {Math.floor(r.paceMinutesPerKm)}:{String(Math.round((r.paceMinutesPerKm%1)*60)).padStart(2,"0")}/km · {r.speedKmh.toFixed(1)} km/h {r.notes && `· ${r.notes}`}</div><div className="row-actions"><button aria-label="Edit run" onClick={()=>setDialog({type:"run",item:r})}><Edit2 size={14}/></button><button aria-label="Delete run" onClick={()=>removeRun(r)}><Trash2 size={14}/></button></div></div>) : <div className="fitness-history-empty">No running sessions recorded yet.</div>}</Card>
+    </>}
+    {dialog?.type === "workout" && <FitnessWorkoutDialog item={dialog.item} exercises={exercises} onClose={() => setDialog(null)} onSaved={refresh}/>}
+    {dialog?.type === "run" && <FitnessRunDialog item={dialog.item} onClose={() => setDialog(null)} onSaved={refresh}/>}
+    {dialog?.type === "exercise" && <FitnessExerciseDialog item={dialog.item} onClose={() => setDialog(null)} onSaved={refresh}/>}
+  </>;
+}
+
+function FitnessExerciseDialog({ item, onClose, onSaved }) {
+  const [form,setForm]=useState({name:item?.name||"",category:item?.category||"Cardio",type:item?.type||"cardio",description:item?.description||""}),[busy,setBusy]=useState(false),[error,setError]=useState("");
+  async function submit(e){e.preventDefault();setBusy(true);setError("");try{await api(`/fitness/exercises${item?.id?`/${item.id}`:""}`,{method:item?.id?"PATCH":"POST",body:JSON.stringify(form)});await onSaved();onClose();}catch(e){setError(e.message);}finally{setBusy(false);}}
+  return <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="fitness-custom-title"><div className="modal-head"><div><div className="eyebrow">EXERCISE LIBRARY</div><h2 id="fitness-custom-title">{item?"Edit custom exercise":"Add custom exercise"}</h2></div><button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18}/></button></div><form onSubmit={submit}><div className="modal-fields"><label>Name<input required maxLength="80" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label>Category<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{["Cardio","Chest","Back","Shoulders","Arms","Legs","Core / Abs"].map(x=><option key={x}>{x}</option>)}</select></label><label>Exercise type<select value={form.type} onChange={e=>setForm({...form,type:e.target.value})}>{[["strength","Strength"],["cardio","Cardio"],["duration","Duration-based"],["repetition","Repetition-based"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label><label className="wide-field">Description <span className="optional">Optional</span><textarea rows="2" maxLength="500" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label></div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}>{busy?"Saving…":"Save exercise"}</button></div></form></div></div>;
+}
+
+function FitnessWorkoutDialog({ item, exercises, onClose, onSaved }) {
+  const [date, setDate] = useState(item ? inputDateTime(item.workoutDate) : `${today}T12:00`), [notes, setNotes] = useState(item?.notes || ""), [rows, setRows] = useState(item?.exercises || []), [busy, setBusy] = useState(false), [error, setError] = useState(""), [custom, setCustom] = useState(false), [newExercise, setNewExercise] = useState({ name: "", category: "Cardio", type: "cardio", description: "" });
+  const options = [...exercises.filter(x => !x.custom || !item?.exercises?.some(e => e.exerciseId === x.id)), { id: "other", name: "Other – Add Custom Exercise", category: "", type: "", custom: false }];
+  const add = (id) => { if (id === "other") { setCustom(true); return; } const e = exercises.find(x => x.id === id); if (e) setRows(prev => [...prev, { exerciseId: e.custom ? e.id : null, name: e.name, category: e.category, type: e.type, sets: "", reps: "", weightKg: "", durationMinutes: "", distanceKm: "", notes: "" }]); };
+  async function createCustom(ev) { ev.preventDefault(); setError(""); try { const { item: saved } = await api("/fitness/exercises", { method: "POST", body: JSON.stringify(newExercise) }); exercises.push({ id: String(saved._id), name: saved.name, category: saved.category, type: saved.type, custom: true }); setRows(prev => [...prev, { exerciseId: String(saved._id), name: saved.name, category: saved.category, type: saved.type, notes: "" }]); setCustom(false); } catch (e) { setError(e.message); } }
+  async function submit(ev) { ev.preventDefault(); setBusy(true); setError(""); const clean = rows.map(x => ({ exerciseId: x.exerciseId || null, name: x.name, category: x.category, type: x.type, sets: x.sets === "" ? null : Number(x.sets), reps: x.reps === "" ? null : Number(x.reps), weightKg: x.weightKg === "" ? null : Number(x.weightKg), durationMinutes: x.durationMinutes === "" ? null : Number(x.durationMinutes), distanceKm: x.distanceKm === "" ? null : Number(x.distanceKm), notes: x.notes || "" })); try { await api(`/fitness/workouts${item ? `/${item._id}` : ""}`, { method: item ? "PATCH" : "POST", body: JSON.stringify({ workoutDate: indiaIso(date), notes, exercises: clean }) }); await onSaved(); onClose(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
+  return <div className="modal-backdrop"><div className="modal fitness-modal" role="dialog" aria-modal="true" aria-labelledby="fitness-workout-title"><div className="modal-head"><div><div className="eyebrow">FITNESS LOG</div><h2 id="fitness-workout-title">{item ? "Edit workout" : "Add workout"}</h2></div><button className="icon-btn" aria-label="Close" onClick={onClose}><X size={18}/></button></div><form onSubmit={submit}><div className="modal-fields"><label>Date and time<input type="datetime-local" required value={date} onChange={e => setDate(e.target.value)}/></label><label className="wide-field">Add exercise<select value="" onChange={e => add(e.target.value)}><option value="" disabled>Select an exercise</option>{options.map((x,i) => <option key={x.id || i} value={x.id}>{x.custom ? `${x.name} · Custom` : x.name}</option>)}</select></label></div>
+    {rows.map((x, i) => <div className="fitness-exercise-form" key={`${x.exerciseId || x.name}-${i}`}><div className="fitness-exercise-form-head"><strong>{x.name}</strong><button type="button" className="icon-btn small" aria-label={`Remove ${x.name}`} onClick={() => setRows(rows.filter((_,j) => j !== i))}><Trash2 size={14}/></button></div><div className="fitness-exercise-fields">{x.type === "strength" && <><label>Sets<input type="number" min="1" value={x.sets ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,sets:e.target.value}:r))}/></label><label>Reps / set<input type="number" min="1" value={x.reps ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,reps:e.target.value}:r))}/></label><label>Weight kg<input type="number" min="0" step="0.1" value={x.weightKg ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,weightKg:e.target.value}:r))}/></label></>}{["cardio","duration"].includes(x.type) && <label>Duration minutes<input type="number" min="1" value={x.durationMinutes ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,durationMinutes:e.target.value}:r))}/></label>}{x.type === "cardio" && <label>Distance km <span className="optional">Optional</span><input type="number" min="0" step="0.01" value={x.distanceKm ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,distanceKm:e.target.value}:r))}/></label>}{x.type === "repetition" && <label>Repetitions<input type="number" min="1" value={x.reps ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,reps:e.target.value}:r))}/></label>}<label className="wide-field">Notes <span className="optional">Optional</span><input value={x.notes || ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,notes:e.target.value}:r))}/></label></div></div>)}
+    <label className="fitness-overall-notes">Workout notes <span className="optional">Optional</span><textarea rows="2" maxLength="2000" value={notes} onChange={e => setNotes(e.target.value)}/></label>
+    {error && <div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button disabled={busy || !rows.length} className="btn primary">{busy ? "Saving…" : "Save workout"}</button></div></form>
+    {custom && <div className="modal-backdrop fitness-nested"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="fitness-custom-title"><div className="modal-head"><div><div className="eyebrow">EXERCISE LIBRARY</div><h2 id="fitness-custom-title">Add custom exercise</h2></div><button className="icon-btn" onClick={() => setCustom(false)} aria-label="Close"><X size={18}/></button></div><form onSubmit={createCustom}><div className="modal-fields"><label>Name<input required maxLength="80" value={newExercise.name} onChange={e => setNewExercise({...newExercise,name:e.target.value})}/></label><label>Category<select value={newExercise.category} onChange={e => setNewExercise({...newExercise,category:e.target.value})}>{["Cardio","Chest","Back","Shoulders","Arms","Legs","Core / Abs"].map(x=><option key={x}>{x}</option>)}</select></label><label>Exercise type<select value={newExercise.type} onChange={e => setNewExercise({...newExercise,type:e.target.value})}>{[["strength","Strength"],["cardio","Cardio"],["duration","Duration-based"],["repetition","Repetition-based"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label><label className="wide-field">Description <span className="optional">Optional</span><textarea rows="2" maxLength="500" value={newExercise.description} onChange={e=>setNewExercise({...newExercise,description:e.target.value})}/></label></div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={()=>setCustom(false)}>Cancel</button><button className="btn primary">Save exercise</button></div></form></div></div>}
+  </div></div>;
+}
+
+function FitnessRunDialog({ item, onClose, onSaved }) {
+  const [form, setForm] = useState(item ? { sessionDate: inputDateTime(item.sessionDate), startTime: item.startTime || "", durationMinutes: String(item.durationMinutes), distanceKm: String(item.distanceKm), notes: item.notes || "" } : { sessionDate: `${today}T12:00`, startTime: "", durationMinutes: "", distanceKm: "", notes: "" }), [busy,setBusy]=useState(false),[error,setError]=useState("");
+  const pace = Number(form.durationMinutes) > 0 && Number(form.distanceKm) > 0 ? Number(form.durationMinutes)/Number(form.distanceKm) : null;
+  async function submit(e) { e.preventDefault(); setBusy(true); setError(""); try { await api(`/fitness/runs${item?`/${item._id}`:""}`, { method: item?"PATCH":"POST", body: JSON.stringify({ ...form, sessionDate: indiaIso(form.sessionDate), durationMinutes: Number(form.durationMinutes), distanceKm: Number(form.distanceKm) }) }); await onSaved(); onClose(); } catch(e) { setError(e.message); } finally { setBusy(false); } }
+  return <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="fitness-run-title"><div className="modal-head"><div><div className="eyebrow">RUNNING LOG</div><h2 id="fitness-run-title">{item?"Edit run":"Add a run"}</h2></div><button className="icon-btn" aria-label="Close" onClick={onClose}><X size={18}/></button></div><form onSubmit={submit}><div className="modal-fields"><label>Date<input required type="datetime-local" value={form.sessionDate} onChange={e=>setForm({...form,sessionDate:e.target.value})}/></label><label>Start time <span className="optional">Optional</span><input type="time" value={form.startTime} onChange={e=>setForm({...form,startTime:e.target.value})}/></label><label>Duration minutes<input required type="number" min="1" max="1440" value={form.durationMinutes} onChange={e=>setForm({...form,durationMinutes:e.target.value})}/></label><label>Distance km<input required type="number" min="0.01" step="0.01" value={form.distanceKm} onChange={e=>setForm({...form,distanceKm:e.target.value})}/></label><div className="fitness-calculation wide-field"><span>Average pace</span><strong>{pace ? `${Math.floor(pace)}:${String(Math.round((pace%1)*60)).padStart(2,"0")} min/km` : "Enter distance and duration"}</strong><span>Average speed</span><strong>{pace ? `${(Number(form.distanceKm)/(Number(form.durationMinutes)/60)).toFixed(1)} km/h` : "—"}</strong></div><label className="wide-field">Notes <span className="optional">Optional</span><textarea rows="2" value={form.notes} maxLength="1000" onChange={e=>setForm({...form,notes:e.target.value})}/></label></div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}>{busy?"Saving…":item?"Save changes":"Save run"}</button></div></form></div></div>;
 }
 
 function ThemeToggle({ theme, onToggle }) {

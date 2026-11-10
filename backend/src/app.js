@@ -12,6 +12,7 @@ import { config } from "./config.js";
 import { Expense, LearningSession, User, DailyReview, WeeklyBudget, LearningSubject, Note } from "./models.js";
 import { asyncRoute, bounds, expenseInput, learningInput, localDay } from "./util.js";
 import { addCalendarDays, budgetInput, mondayOf, weeklyBudgetReport, weekStartSchema } from "./budget.js";
+import { fitnessRouter } from "./fitness.js";
 
 export const app = express();
 app.use(helmet());
@@ -201,6 +202,7 @@ app.use("/api", (req, res, next) => {
   }
   next();
 });
+app.use("/api/fitness", fitnessRouter);
 const subjectStatsFor = (sessions, subjectId) => {
   const matching = sessions.filter((session) => String(session.subjectId) === String(subjectId));
   const now = localDay(new Date());

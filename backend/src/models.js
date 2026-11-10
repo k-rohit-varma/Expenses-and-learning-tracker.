@@ -115,6 +115,29 @@ const noteSchema = new Schema({
   pinned: { type: Boolean, default: false },
 }, { timestamps: true });
 noteSchema.index({ userId:  1, subjectId: 1, pinned: -1, updatedAt: -1 });
+const fitnessExerciseSchema = new Schema({
+  ...base,
+  name: { type: String, required: true, trim: true, maxlength: 80 },
+  category: { type: String, required: true, enum: ["Cardio", "Chest", "Back", "Shoulders", "Arms", "Legs", "Core / Abs"] },
+  type: { type: String, required: true, enum: ["strength", "cardio", "duration", "repetition"] },
+  description: { type: String, trim: true, maxlength: 500, default: "" },
+}, { timestamps: true });
+fitnessExerciseSchema.index({ userId: 1, name: 1 }, { unique: true, collation: { locale: "en", strength: 2 } });
+const workoutSchema = new Schema({
+  ...base,
+  workoutDate: { type: Date, required: true, index: true },
+  notes: { type: String, maxlength: 2000, default: "" },
+  exercises: [{ exerciseId: { type: Schema.Types.ObjectId, default: null }, name: { type: String, required: true, maxlength: 80 }, category: { type: String, required: true }, type: { type: String, required: true }, sets: { type: Number, min: 1, default: null }, reps: { type: Number, min: 1, default: null }, weightKg: { type: Number, min: 0, default: null }, durationMinutes: { type: Number, min: 1, default: null }, distanceKm: { type: Number, min: 0, default: null }, notes: { type: String, maxlength: 500, default: "" } }],
+}, { timestamps: true });
+workoutSchema.index({ userId: 1, workoutDate: -1 });
+const runningSessionSchema = new Schema({
+  ...base,
+  sessionDate: { type: Date, required: true, index: true },
+  durationMinutes: { type: Number, required: true, min: 1, max: 1440 },
+  distanceKm: { type: Number, required: true, min: 0.01, max: 1000 },
+  startTime: { type: String, default: "" }, notes: { type: String, maxlength: 1000, default: "" },
+}, { timestamps: true });
+runningSessionSchema.index({ userId: 1, sessionDate: -1 });
 export const Expense =
   mongoose.models.Expense || model("Expense", expenseSchema);
 export const LearningSession =
@@ -125,3 +148,6 @@ export const DailyReview =
 export const WeeklyBudget = mongoose.models.WeeklyBudget || model("WeeklyBudget", weeklyBudgetSchema);
 export const LearningSubject = mongoose.models.LearningSubject || model("LearningSubject", learningSubjectSchema);
 export const Note = mongoose.models.Note || model("Note", noteSchema);
+export const FitnessExercise = mongoose.models.FitnessExercise || model("FitnessExercise", fitnessExerciseSchema);
+export const Workout = mongoose.models.Workout || model("Workout", workoutSchema);
+export const RunningSession = mongoose.models.RunningSession || model("RunningSession", runningSessionSchema);
