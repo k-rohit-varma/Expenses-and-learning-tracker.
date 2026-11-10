@@ -13,6 +13,7 @@ import { Expense, LearningSession, User, DailyReview, WeeklyBudget, LearningSubj
 import { asyncRoute, bounds, expenseInput, learningInput, localDay } from "./util.js";
 import { addCalendarDays, budgetInput, mondayOf, weeklyBudgetReport, weekStartSchema } from "./budget.js";
 import { fitnessRouter } from "./fitness.js";
+import { scheduleRouter } from "./schedules.js";
 
 export const app = express();
 app.use(helmet());
@@ -203,6 +204,7 @@ app.use("/api", (req, res, next) => {
   next();
 });
 app.use("/api/fitness", fitnessRouter);
+app.use("/api/schedules", scheduleRouter);
 const subjectStatsFor = (sessions, subjectId) => {
   const matching = sessions.filter((session) => String(session.subjectId) === String(subjectId));
   const now = localDay(new Date());
@@ -442,16 +444,40 @@ app.get(
       req.query.sort === "amount"
         ? { amountPaise: req.query.order === "asc" ? 1 : -1 }
         : { transactionDate: req.query.order === "asc" ? 1 : -1 };
-    const [items, total] = await Promise.all([
+    const [items, total, summaryRows] = await Promise.all([
       Expense.find(q)
         .sort(sort)
         .skip((page - 1) * limit)
         .limit(limit),
       Expense.countDocuments(q),
+      Expense.aggregate([
+        { $match: q },
+        {
+          $group: {
+            _id: null,
+            totalAmountPaise: { $sum: "$amountPaise" },
+            count: { $sum: 1 },
+            largestAmountPaise: { $max: "$amountPaise" },
+          },
+        },
+      ]),
     ]);
+    const summary = summaryRows[0] || {
+      totalAmountPaise: 0,
+      count: 0,
+      largestAmountPaise: 0,
+    };
     res.json({
       items: items.map(expenseWire),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      summary: {
+        totalAmount: summary.totalAmountPaise / 100,
+        count: summary.count,
+        averageAmount: summary.count
+          ? summary.totalAmountPaise / summary.count / 100
+          : 0,
+        largestAmount: summary.largestAmountPaise / 100,
+      },
     });
   }),
 );

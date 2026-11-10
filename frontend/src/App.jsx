@@ -64,6 +64,7 @@ import {
   YAxis,
 } from "recharts";
 import { api, download, qs } from "./api.js";
+import Schedule from "./Schedule.jsx";
 
 const money = (n) =>
   new Intl.NumberFormat("en-IN", {
@@ -146,6 +147,7 @@ const nav = [
   ["/budget", "Budget", Activity],
   ["/learning", "Learning", BookOpen],
   ["/fitness", "Fitness", Dumbbell],
+  ["/schedule", "Schedule", CalendarDays],
   ["/calendar", "Calendar", CalendarDays],
   ["/reports", "Reports", ChartNoAxesCombined],
   ["/settings", "Settings", SettingsIcon],
@@ -365,6 +367,7 @@ function App() {
               element={<Learning onToast={setToast} />}
             />
             <Route path="/fitness" element={<Fitness />} />
+            <Route path="/schedule" element={<Schedule onToast={setToast} settings={settings} />} />
             <Route path="/calendar" element={<Calendar onToast={setToast} />} />
             <Route path="/reports" element={<Reports />} />
             <Route
@@ -1656,6 +1659,7 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
   const exp = type === "expense",
     [items, setItems] = useState([]),
     [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 }),
+    [summary, setSummary] = useState({ totalAmount: 0, count: 0, averageAmount: 0, largestAmount: 0 }),
     [filters, setFilters] = useState({
       search: "",
       from: "",
@@ -1693,6 +1697,7 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
       const r = await api(`/${endpoint}${qs(f)}`);
       setItems(r.items);
       setPagination(r.pagination);
+      if (exp) setSummary(r.summary || { totalAmount: 0, count: 0, averageAmount: 0, largestAmount: 0 });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -1758,6 +1763,14 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
           </button>
         }
       />
+      {exp && (
+        <div className="stat-grid expense-stat-grid">
+          <Stat label="Total spent" value={money(summary.totalAmount)} sub="Across matching expenses" icon={Wallet} color="blue" />
+          <Stat label="Records" value={summary.count.toLocaleString()} sub="Matching expenses" icon={FileText} color="purple" />
+          <Stat label="Average expense" value={money(summary.averageAmount)} sub="Per matching record" icon={ChartNoAxesCombined} color="green" />
+          <Stat label="Largest expense" value={money(summary.largestAmount)} sub="In the current results" icon={ArrowUpRight} color="orange" />
+        </div>
+      )}
       <Card className="records-card">
         <div className="filter-bar">
           <div className="search-field">

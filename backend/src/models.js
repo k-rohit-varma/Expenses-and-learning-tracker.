@@ -138,6 +138,42 @@ const runningSessionSchema = new Schema({
   startTime: { type: String, default: "" }, notes: { type: String, maxlength: 1000, default: "" },
 }, { timestamps: true });
 runningSessionSchema.index({ userId: 1, sessionDate: -1 });
+const scheduleOccurrenceSchema = new Schema({
+  date: { type: String, required: true },
+  movedFrom: { type: String, default: null },
+  canceled: { type: Boolean, default: false },
+  status: { type: String, enum: ["pending", "completed", "skipped"], default: null },
+  title: { type: String, trim: true, maxlength: 120, default: null },
+  description: { type: String, maxlength: 1000, default: null },
+  category: { type: String, enum: ["Work", "Personal", "Fitness", "Learning", "Finance", "Appointments", "Travel", "Other"], default: null },
+  startTime: { type: String, default: null },
+  endTime: { type: String, default: null },
+  allDay: { type: Boolean, default: null },
+  location: { type: String, maxlength: 200, default: null },
+  notes: { type: String, maxlength: 2000, default: null },
+});
+const scheduleSchema = new Schema({
+  ...base,
+  title: { type: String, required: true, trim: true, maxlength: 120 },
+  description: { type: String, maxlength: 1000, default: "" },
+  category: { type: String, enum: ["Work", "Personal", "Fitness", "Learning", "Finance", "Appointments", "Travel", "Other"], required: true },
+  startDate: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
+  startTime: { type: String, default: "" },
+  endTime: { type: String, default: "" },
+  allDay: { type: Boolean, default: false },
+  timezone: { type: String, default: "Asia/Kolkata" },
+  location: { type: String, maxlength: 200, default: "" },
+  notes: { type: String, maxlength: 2000, default: "" },
+  status: { type: String, enum: ["pending", "completed", "skipped"], default: "pending" },
+  recurrence: {
+    frequency: { type: String, enum: ["none", "daily", "weekly", "monthly", "weekdays"], default: "none" },
+    weekdays: { type: [Number], default: [] },
+    until: { type: String, default: "" },
+  },
+  occurrences: { type: [scheduleOccurrenceSchema], default: [] },
+}, { timestamps: true });
+scheduleSchema.index({ userId: 1, startDate: 1 });
+scheduleSchema.index({ userId: 1, "recurrence.frequency": 1, startDate: 1 });
 export const Expense =
   mongoose.models.Expense || model("Expense", expenseSchema);
 export const LearningSession =
@@ -151,3 +187,4 @@ export const Note = mongoose.models.Note || model("Note", noteSchema);
 export const FitnessExercise = mongoose.models.FitnessExercise || model("FitnessExercise", fitnessExerciseSchema);
 export const Workout = mongoose.models.Workout || model("Workout", workoutSchema);
 export const RunningSession = mongoose.models.RunningSession || model("RunningSession", runningSessionSchema);
+export const Schedule = mongoose.models.Schedule || model("Schedule", scheduleSchema);
