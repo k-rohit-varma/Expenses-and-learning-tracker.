@@ -65,6 +65,7 @@ import {
 } from "recharts";
 import { api, download, qs } from "./api.js";
 import Schedule from "./Schedule.jsx";
+import "./sidebar.css";
 
 const money = (n) =>
   new Intl.NumberFormat("en-IN", {
