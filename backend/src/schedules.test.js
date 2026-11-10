@@ -35,6 +35,7 @@ test("schedule input rejects bad dates, missing fields and overnight intervals",
   assert.equal(scheduleInput.safeParse({ ...base, startDate: "2026-02-30" }).success, false);
   assert.equal(scheduleInput.safeParse({ ...base, title: " " }).success, false);
   assert.equal(scheduleInput.safeParse({ ...base, endTime: "18:59" }).success, false);
+  assert.equal(scheduleInput.safeParse({ ...base, startTime: "23:30", endTime: "00:30" }).success, false, "overnight events are unsupported");
   assert.equal(scheduleInput.safeParse({ ...base, allDay: true, startTime: "", endTime: "" }).success, true);
   assert.equal(scheduleInput.safeParse({ ...base, userId: "0123456789abcdef01234567" }).success, false);
 });
@@ -66,6 +67,9 @@ test("occurrence overrides can be completed, moved and canceled without duplicat
   assert.equal(isOccurrence(recurring, "2026-11-05"), true);
   assert.equal(asOccurrence(recurring, "2026-11-05").title, "Moved session");
   assert.equal(asOccurrence(recurring, "2026-11-05").startTime, "20:00");
+  const legacy = asOccurrence(series({ timezone: undefined, startTime: "19:00", endTime: "20:00" }), "2026-11-02");
+  assert.equal(legacy.startTime, "19:00", "existing wall-clock values are returned unchanged");
+  assert.equal(legacy.timezone, "Asia/Kolkata", "legacy rows without timezone metadata keep the established default");
 });
 
 test("conflicts include overlaps and all-day events, allow boundary touching, and exclude the edited series", () => {
@@ -89,17 +93,17 @@ test("recurring conflict checks cover generated dates and cap unbounded rules at
 
 test("create persists ownership from the session and status, edit, and delete operate on one occurrence", async () => {
   const originals = { create: Schedule.create, find: Schedule.find, findOne: Schedule.findOne };
-  const user = { _id: "user-a", settings: { timezone: "Asia/Kolkata" } };
+  const user = { _id: "user-a", settings: { timezone: "America/New_York" } };
   const created = series({ _id: "eeeeeeeeeeeeeeeeeeeeeeee", userId: user._id });
   created.toObject = () => ({ ...created });
   created.save = async () => {};
   try {
-    Schedule.create = async (document) => { assert.equal(document.userId, user._id); return created; };
+    Schedule.create = async (document) => { assert.equal(document.userId, user._id); Object.assign(created, document); return created; };
     Schedule.find = () => ({ lean: async () => [] });
     const createResult = await runRoute("post", "/", { user, body: { title: "Study", category: "Learning", startDate: "2026-11-02", startTime: "19:00", endTime: "19:45" } });
     assert.equal(createResult.status, 201);
     assert.equal(createResult.body.item.seriesId, created._id);
-    assert.equal(created.timezone, "Asia/Kolkata");
+    assert.equal(created.timezone, "America/New_York");
 
     Schedule.findOne = (query) => { assert.equal(query.userId, user._id); return created; };
     const statusResult = await runRoute("patch", "/:id/status", { user, params: { id: created._id }, body: { date: "2026-11-02", status: "completed" } });

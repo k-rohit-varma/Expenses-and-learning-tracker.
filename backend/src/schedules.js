@@ -40,10 +40,24 @@ export const isOccurrence = (series, key) => {
 export function asOccurrence(series, key) {
   const override = series.occurrences?.find((x) => x.date === key);
   if (override?.canceled) return null;
-  const fields = ["title", "description", "category", "startTime", "endTime", "allDay", "location", "notes"];
-  const result = { ...series, ...Object.fromEntries(fields.map((field) => [field, override?.[field] ?? series[field]])), id: `${series._id}@${key}`, seriesId: String(series._id), occurrenceDate: key, status: override?.status || series.status || "pending", recurring: (series.recurrence?.frequency || "none") !== "none" };
-  delete result.occurrences;
-  return result;
+  const value = (field) => override?.[field] ?? series[field];
+  return {
+    id: `${series._id}@${key}`,
+    seriesId: String(series._id),
+    occurrenceDate: key,
+    title: value("title"),
+    description: value("description"),
+    category: value("category"),
+    startTime: value("startTime"),
+    endTime: value("endTime"),
+    allDay: value("allDay"),
+    location: value("location"),
+    notes: value("notes"),
+    status: override?.status || series.status || "pending",
+    recurrence: series.recurrence,
+    timezone: series.timezone || "Asia/Kolkata",
+    recurring: (series.recurrence?.frequency || "none") !== "none",
+  };
 }
 export function expand(series, from, to) {
   const output = [];

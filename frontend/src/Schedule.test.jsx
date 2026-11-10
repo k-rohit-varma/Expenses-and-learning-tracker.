@@ -3,6 +3,7 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import Schedule from "./Schedule.jsx";
+import { dateKeyInTimezone, eventDurationMinutes, formatLocalTime, timelineLayout } from "./scheduleTime.js";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function installApi(initialItems = []) {
@@ -25,6 +26,10 @@ describe("Schedule planner", () => {
     expect(screen.getByText("Planned hours")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Select date"), { target: { value: "2026-11-12" } });
     await waitFor(() => expect(calls.some((call) => call.path.includes("from=2026-11-12"))).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await waitFor(() => expect(calls.some((call) => call.path.includes("from=2026-11-11"))).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(calls.filter((call) => call.path.includes("from=2026-11-12")).length).toBeGreaterThan(1));
     fireEvent.click(screen.getByRole("button", { name: "Week" }));
     expect(await screen.findByRole("heading", { name: "Weekly overview" })).toBeTruthy();
     expect(document.querySelectorAll(".schedule-grid-day").length).toBe(7);
@@ -58,5 +63,63 @@ describe("Schedule planner", () => {
     const update = calls.find((call) => call.options.method === "PUT");
     expect(JSON.parse(update.options.body)).toMatchObject({ title: "Updated title", startDate: date });
     expect(JSON.parse(update.options.body)).not.toHaveProperty("seriesId");
+  });
+
+  it("positions event cards on their matching local clock markers with duration-scaled heights", async () => {
+    const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const events = [
+      ["seven", "07:00", "08:00"],
+      ["noon", "12:00", "13:00"],
+      ["evening", "19:00", "20:00"],
+      ["nine", "21:00", "21:30"],
+      ["short", "15:15", "15:30"],
+      ["quarter-hour", "10:30", "11:15"],
+      ["long", "08:15", "10:15"],
+      ["midnight", "23:30", "23:59"],
+    ].map(([title, startTime, endTime]) => ({ id: `${title}@${date}`, seriesId: title, occurrenceDate: date, title, description: "", category: "Work", startTime, endTime, allDay: false, location: "", notes: "", status: "pending", recurring: false }));
+    events.push({ id: `all-day@${date}`, seriesId: "all-day", occurrenceDate: date, title: "All-day meeting", description: "", category: "Appointments", startTime: "", endTime: "", allDay: true, location: "", notes: "", status: "pending", recurring: false });
+    installApi(events);
+    render(<Schedule onToast={vi.fn()} settings={{ timezone: "Asia/Kolkata" }} />);
+    const seven = await screen.findByTestId("schedule-event-seven");
+    const noon = screen.getByTestId("schedule-event-noon");
+    const evening = screen.getByTestId("schedule-event-evening");
+    const nine = screen.getByTestId("schedule-event-nine");
+    expect(seven.style.top).toBe("630px");
+    expect(screen.getByTestId("schedule-hour-07").style.top).toBe(seven.style.top);
+    expect(seven.style.height).toBe("90px");
+    expect(noon.style.top).toBe("1080px");
+    expect(screen.getByTestId("schedule-hour-12").style.top).toBe(noon.style.top);
+    expect(evening.style.top).toBe("1710px");
+    expect(screen.getByTestId("schedule-hour-19").style.top).toBe(evening.style.top);
+    expect(evening.style.height).toBe("90px");
+    expect(nine.style.top).toBe("1890px");
+    expect(screen.getByTestId("schedule-hour-21").style.top).toBe(nine.style.top);
+    expect(nine.style.height).toBe("45px");
+    expect(screen.getByTestId("schedule-event-short").style.height).toBe("22.5px");
+    expect(screen.getByTestId("schedule-event-quarter-hour").style.height).toBe("67.5px");
+    expect(screen.getByTestId("schedule-event-long").style.height).toBe("180px");
+    expect(screen.getByTestId("schedule-event-midnight").style.top).toBe("2115px");
+    expect(screen.getByTestId("schedule-all-day-all-day").textContent).toContain("All-day meeting");
+    expect(screen.getByRole("button", { name: /evening, 07:00 PM to 08:00 PM/i })).toBeTruthy();
+  });
+
+  it("keeps wall-clock labels independent of host timezone and assigns overlapping events separate lanes", () => {
+    expect(formatLocalTime("07:00")).toBe("07:00 AM");
+    expect(formatLocalTime("12:00")).toBe("12:00 PM");
+    expect(formatLocalTime("19:00")).toBe("07:00 PM");
+    expect(formatLocalTime("21:00")).toBe("09:00 PM");
+    const events = [
+      { title: "A", startTime: "19:00", endTime: "20:00" },
+      { title: "B", startTime: "19:30", endTime: "20:00" },
+      { title: "C", startTime: "20:00", endTime: "20:15" },
+      { title: "D", startTime: "10:30", endTime: "11:15" },
+    ];
+    const laidOut = timelineLayout(events);
+    expect(Object.fromEntries(laidOut.map((x) => [x.event.title, x.lane]))).toEqual({ D: 0, A: 0, B: 1, C: 0 });
+    expect(laidOut.every((x) => x.width === "50%")).toBe(true);
+    expect(events.map(eventDurationMinutes)).toEqual([60, 30, 15, 45]);
+    const instant = "2026-11-10T18:45:00.000Z";
+    expect(dateKeyInTimezone(instant, "Asia/Kolkata")).toBe("2026-11-11");
+    expect(dateKeyInTimezone(instant, "America/Los_Angeles")).toBe("2026-11-10");
   });
 });
