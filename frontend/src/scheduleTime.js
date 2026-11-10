@@ -1,5 +1,5 @@
 export const MINUTES_PER_DAY = 24 * 60;
-export const TIMELINE_PIXELS_PER_MINUTE = 1.5;
+export const TIMELINE_PIXELS_PER_MINUTE = 1;
 
 export function dateKeyInTimezone(instant, timeZone) {
   const value = instant instanceof Date ? instant : new Date(instant);

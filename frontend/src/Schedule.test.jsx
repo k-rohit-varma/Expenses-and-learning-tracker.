@@ -95,10 +95,10 @@ describe("Schedule planner", () => {
     expect(nine.style.top).toBe("1890px");
     expect(screen.getByTestId("schedule-hour-21").style.top).toBe(nine.style.top);
     expect(nine.style.height).toBe("45px");
-    expect(screen.getByTestId("schedule-event-short").style.height).toBe("22.5px");
-    expect(screen.getByTestId("schedule-event-quarter-hour").style.height).toBe("67.5px");
-    expect(screen.getByTestId("schedule-event-long").style.height).toBe("180px");
-    expect(screen.getByTestId("schedule-event-midnight").style.top).toBe("2115px");
+    expect(screen.getByTestId("schedule-event-short").style.height).toBe("15px");
+    expect(screen.getByTestId("schedule-event-quarter-hour").style.height).toBe("45px");
+    expect(screen.getByTestId("schedule-event-long").style.height).toBe("120px");
+    expect(screen.getByTestId("schedule-event-midnight").style.top).toBe("1410px");
     expect(screen.getByTestId("schedule-all-day-all-day").textContent).toContain("All-day meeting");
     expect(screen.getByRole("button", { name: /evening, 07:00 PM to 08:00 PM/i })).toBeTruthy();
   });

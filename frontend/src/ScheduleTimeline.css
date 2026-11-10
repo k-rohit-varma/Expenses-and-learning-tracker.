@@ -76,7 +76,7 @@
   grid-column: 2;
   grid-row: 2;
   min-width: 0;
-  background-image: repeating-linear-gradient(to bottom, var(--line) 0, var(--line) 1px, transparent 1px, transparent 90px);
+  background-image: repeating-linear-gradient(to bottom, var(--line) 0, var(--line) 1px, transparent 1px, transparent 60px);
 }
 
 .schedule-timed-event {
