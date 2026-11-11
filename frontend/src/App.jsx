@@ -288,7 +288,8 @@ function App() {
             >
               <Icon size={18} />
               <span>{label}</span>
-              {to === "/expenses" && <span className="nav-dot" />}
+              {to === "/expenses" && <span className="nav-dot nav-dot-expense" aria-label="Expenses color" />}
+              {to === "/learning" && <span className="nav-dot nav-dot-learning" aria-label="Learning color" />}
             </NavLink>
           ))}
         </nav>
@@ -2072,8 +2073,8 @@ function LearningSubjectPage({ onToast, settings }) {
 }
 
 function SubjectNotes({ subject, onToast }) {
-  const [items, setItems] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState(""), [search, setSearch] = useState(""), [draft, setDraft] = useState(null), [saving, setSaving] = useState(false), [deleting, setDeleting] = useState(null), [viewing, setViewing] = useState(null), [page, setPage] = useState(1);
-  const pageSize = 6;
+  const [items, setItems] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState(""), [search, setSearch] = useState(""), [filter, setFilter] = useState("all"), [draft, setDraft] = useState(null), [saving, setSaving] = useState(false), [deleting, setDeleting] = useState(null), [viewing, setViewing] = useState(null), [page, setPage] = useState(1);
+  const pageSize = 5;
   const storageKey = `lifeledger-note-draft:${subject._id}`;
   const load = async () => {
     setLoading(true);
@@ -2106,7 +2107,7 @@ function SubjectNotes({ subject, onToast }) {
     try { const saved = JSON.parse(localStorage.getItem(storageKey)); setDraft(saved ? { ...saved, _id: saved.noteId || undefined } : { title: "", content: "", pinned: false }); }
     catch { setDraft({ title: "", content: "", pinned: false }); }
   };
-  const shown = items.filter((note) => `${note.title} ${note.content}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+  const shown = items.filter((note) => (filter === "all" || note.pinned) && `${note.title} ${note.content}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   const pageCount = Math.max(1, Math.ceil(shown.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageItems = shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -2125,7 +2126,7 @@ function SubjectNotes({ subject, onToast }) {
   }
   return <section className="notes-section">
     <div className="notes-toolbar"><div><h2>Subject notes</h2><p>Ideas saved separately from your study sessions.</p></div><button type="button" className="btn primary" onClick={startNew}><Plus size={15} /> New note</button></div>
-    <label className="notes-search"><Search size={15} /><input aria-label="Search notes" placeholder="Search notes" value={search} onChange={(e) => changeSearch(e.target.value)} /></label>
+    <div className="notes-filters"><label className="notes-search"><Search size={15} /><input aria-label="Search notes" placeholder="Search notes" value={search} onChange={(e) => changeSearch(e.target.value)} /></label><label className="notes-filter-label">Show<select aria-label="Filter notes" className="notes-filter" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}><option value="all">All notes</option><option value="pinned">Pinned only</option></select></label></div>
     {error && <div className="inline-error">{error}<button type="button" onClick={load}>Retry</button></div>}
     {draft && <div className="card note-editor"><label>Title <span className="optional">Optional</span><input maxLength="160" placeholder="A title for this note" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label><label>Note<textarea autoFocus rows="9" maxLength="20000" required placeholder="Jot down your ideas…" value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} /></label><div className="note-editor-foot"><span>{saving ? "Saving…" : draft._id ? "Autosaved" : "Draft saved on this device"}</span><button type="button" className="btn ghost" onClick={() => { setDraft(null); localStorage.removeItem(storageKey); }}>Done</button></div></div>}
     {loading ? <div className="table-loading">Loading notes…</div> : shown.length ? <><div className="notes-grid">{pageItems.map((note) => <article className="card note-card" key={note._id}><div className="note-card-head"><strong>{note.title || "Untitled note"}</strong><button type="button" className={`icon-btn small ${note.pinned ? "note-pinned" : ""}`} aria-label={note.pinned ? "Unpin note" : "Pin note"} title={note.pinned ? "Unpin note" : "Pin note"} onClick={() => togglePin(note)}><Pin size={14} /></button><button type="button" className="icon-btn small" aria-label="Edit note" onClick={() => setDraft(note)}><Edit2 size={14} /></button><button type="button" className="icon-btn small" aria-label="Delete note" onClick={() => setDeleting(note)}><Trash2 size={14} /></button></div><p className="note-preview">{note.content}</p><div className="note-card-actions"><button type="button" className="text-btn" onClick={() => setViewing(note)}>View note <ChevronRight size={14} /></button></div><div className="note-timestamps"><span>Created {new Date(note.createdAt).toLocaleString()}</span><span>Updated {new Date(note.updatedAt).toLocaleString()}</span></div></article>)}</div>{pageCount > 1 && <nav className="notes-pagination" aria-label="Notes pages"><span>{(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, shown.length)} of {shown.length}</span><div><button type="button" className="btn ghost" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage} of {pageCount}</span><button type="button" className="btn ghost" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></div></nav>}</> : !draft && <div className="card notes-empty"><FileText size={23} /><h3>{search ? "No matching notes" : "Jot down your first idea"}</h3><p>{search ? "Try another search." : "Keep thoughts, questions, and ideas here, separate from your sessions."}</p>{!search && <button type="button" className="btn secondary" onClick={startNew}>Write a note</button>}</div>}

@@ -67,7 +67,7 @@
   white-space: nowrap;
 }
 
-.schedule-time-rail [data-testid="schedule-hour-00"] {
+.schedule-time-rail .first-hour {
   transform: none;
 }
 

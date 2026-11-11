@@ -9,3 +9,11 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
+.nav-dot.nav-dot-expense {
+  background: #e29152;
+}
+
+.nav-dot-learning {
+  background: #6e85e5;
+}

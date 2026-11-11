@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Activity, ArrowLeft, ArrowRight, BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, Dumbbell, MapPin, Plus, Search, Trash2, X } from "lucide-react";
 import { api, qs } from "./api.js";
-import { MINUTES_PER_DAY, TIMELINE_PIXELS_PER_MINUTE, dateKeyInTimezone, formatLocalTime, timelineLayout } from "./scheduleTime.js";
+import { TIMELINE_PIXELS_PER_MINUTE, dateKeyInTimezone, formatLocalTime, timelineLayout } from "./scheduleTime.js";
 import "./Schedule.css";
 import "./ScheduleTimeline.css";
 
@@ -101,13 +101,19 @@ function EventChip({ event, onClick }) { return <button type="button" className=
 function DayView({ date, events, onOpen, onAdd }) {
   const allDay = events.filter((event) => event.allDay);
   const positions = timelineLayout(events);
-  const trackHeight = MINUTES_PER_DAY * TIMELINE_PIXELS_PER_MINUTE;
+  const firstMinute = positions.length ? Math.min(...positions.map(({ startMinute }) => startMinute)) : 0;
+  const lastMinute = positions.length ? Math.max(...positions.map(({ startMinute, durationMinutes }) => startMinute + durationMinutes)) : 0;
+  const firstHour = Math.floor(firstMinute / 60);
+  const lastHour = positions.length ? Math.ceil(lastMinute / 60) : 0;
+  const visibleHours = Math.max(0, lastHour - firstHour);
+  const trackHeight = visibleHours * 60 * TIMELINE_PIXELS_PER_MINUTE;
+  const hourMarkers = Array.from({ length: visibleHours }, (_, index) => firstHour + index);
   return <div className="schedule-day-view">
     <div className="schedule-all-day-label">ALL DAY</div>
     <div className="schedule-all-day-events">{allDay.map((event) => <button key={event.id} data-testid={`schedule-all-day-${event.seriesId}`} className={`schedule-all-day-event cat-${event.category.toLowerCase()} status-${event.status}`} onClick={() => onOpen(event)}>{event.title}<span>{event.category}</span></button>)}{!allDay.length && <span className="schedule-no-all-day">—</span>}</div>
-    <div className="schedule-time-rail" style={{ height: `${trackHeight}px` }} aria-hidden="true">{Array.from({ length: 24 }, (_, hour) => <span data-testid={`schedule-hour-${String(hour).padStart(2, "0")}`} key={hour} style={{ top: `${hour * 60 * TIMELINE_PIXELS_PER_MINUTE}px` }}>{`${String(hour % 12 || 12).padStart(2, "0")}:00 ${hour < 12 ? "AM" : "PM"}`}</span>)}</div>
+    <div className="schedule-time-rail" style={{ height: `${trackHeight}px` }} aria-hidden="true">{hourMarkers.map((hour, index) => <span className={index === 0 ? "first-hour" : ""} data-testid={`schedule-hour-${String(hour).padStart(2, "0")}`} key={hour} style={{ top: `${index * 60 * TIMELINE_PIXELS_PER_MINUTE}px` }}>{`${String(hour % 12 || 12).padStart(2, "0")}:00 ${hour < 12 ? "AM" : "PM"}`}</span>)}</div>
     <div className="schedule-time-track" style={{ height: `${trackHeight}px` }}>
-      {positions.map(({ event, top, height, left, width, durationMinutes }) => <button key={event.id} type="button" data-testid={`schedule-event-${event.seriesId}`} data-start-time={event.startTime} className={`schedule-timed-event cat-${event.category.toLowerCase()} status-${event.status} ${durationMinutes <= 20 ? "short" : ""}`} style={{ top: `${top}px`, height: `${height}px`, left, width }} onClick={() => onOpen(event)} aria-label={`${event.title}, ${formatLocalTime(event.startTime)} to ${formatLocalTime(event.endTime)}`}>
+      {positions.map(({ event, startMinute, height, left, width, durationMinutes }) => <button key={event.id} type="button" data-testid={`schedule-event-${event.seriesId}`} data-start-time={event.startTime} className={`schedule-timed-event cat-${event.category.toLowerCase()} status-${event.status} ${durationMinutes <= 20 ? "short" : ""}`} style={{ top: `${(startMinute - firstHour * 60) * TIMELINE_PIXELS_PER_MINUTE}px`, height: `${height}px`, left, width }} onClick={() => onOpen(event)} aria-label={`${event.title}, ${formatLocalTime(event.startTime)} to ${formatLocalTime(event.endTime)}`}>
         <span className="schedule-timed-time">{formatLocalTime(event.startTime)} – {formatLocalTime(event.endTime)}</span><strong>{event.title}</strong>
       </button>)}
     </div>
