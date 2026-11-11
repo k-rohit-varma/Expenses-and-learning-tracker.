@@ -2073,16 +2073,15 @@ function LearningSubjectPage({ onToast, settings }) {
 }
 
 function SubjectNotes({ subject, onToast }) {
-  const [items, setItems] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState(""), [search, setSearch] = useState(""), [filter, setFilter] = useState("all"), [draft, setDraft] = useState(null), [saving, setSaving] = useState(false), [deleting, setDeleting] = useState(null), [viewing, setViewing] = useState(null), [page, setPage] = useState(1);
-  const pageSize = 5;
+  const [items, setItems] = useState([]), [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 5 }), [loading, setLoading] = useState(true), [error, setError] = useState(""), [search, setSearch] = useState(""), [filter, setFilter] = useState("all"), [draft, setDraft] = useState(null), [saving, setSaving] = useState(false), [deleting, setDeleting] = useState(null), [viewing, setViewing] = useState(null), [page, setPage] = useState(1);
   const storageKey = `lifeledger-note-draft:${subject._id}`;
   const load = async () => {
     setLoading(true);
-    try { const result = await api(`/learning/subjects/${subject._id}/notes`); setItems(result.items); setError(""); }
+    try { const params = new URLSearchParams({ page: String(page), limit: "5", search, pinned: String(filter === "pinned") }); const result = await api(`/learning/subjects/${subject._id}/notes?${params}`); setItems(result.items); setPagination(result.pagination); setError(""); }
     catch (e) { setError(e.message); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [subject._id]);
+  useEffect(() => { load(); }, [subject._id, page, search, filter]);
   useEffect(() => {
     if (!draft) return;
     localStorage.setItem(storageKey, JSON.stringify({ title: draft.title, content: draft.content, pinned: draft.pinned, noteId: draft._id || null }));
@@ -2094,7 +2093,7 @@ function SubjectNotes({ subject, onToast }) {
         const result = draft._id
           ? await api(`/learning/notes/${draft._id}`, { method: "PUT", body })
           : await api(`/learning/subjects/${subject._id}/notes`, { method: "POST", body });
-        setItems((current) => [result.note, ...current.filter((item) => item._id !== result.note._id)].sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.updatedAt) - new Date(a.updatedAt)));
+        load();
         setDraft((current) => current && !current._id ? { ...current, _id: result.note._id } : current);
         localStorage.removeItem(storageKey);
         setError("");
@@ -2107,21 +2106,20 @@ function SubjectNotes({ subject, onToast }) {
     try { const saved = JSON.parse(localStorage.getItem(storageKey)); setDraft(saved ? { ...saved, _id: saved.noteId || undefined } : { title: "", content: "", pinned: false }); }
     catch { setDraft({ title: "", content: "", pinned: false }); }
   };
-  const shown = items.filter((note) => (filter === "all" || note.pinned) && `${note.title} ${note.content}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
-  const pageCount = Math.max(1, Math.ceil(shown.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const pageItems = shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pageCount = pagination.pages;
+  const currentPage = pagination.page;
+  const pageItems = items;
   const changeSearch = (value) => { setSearch(value); setPage(1); };
   async function togglePin(note) {
     const pinned = !note.pinned;
     try {
       const { note: updated } = await api(`/learning/notes/${note._id}`, { method: "PUT", body: JSON.stringify({ title: note.title, content: note.content, pinned }) });
-      setItems((current) => [updated, ...current.filter((item) => item._id !== updated._id)].sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.updatedAt) - new Date(a.updatedAt)));
+      load();
       setViewing((current) => current?._id === updated._id ? updated : current);
     } catch (e) { setError(e.message); }
   }
   async function removeNote(note) {
-    try { await api(`/learning/notes/${note._id}`, { method: "DELETE" }); setItems((current) => current.filter((item) => item._id !== note._id)); setDeleting(null); onToast("Note deleted."); }
+    try { await api(`/learning/notes/${note._id}`, { method: "DELETE" }); setDeleting(null); load(); onToast("Note deleted."); }
     catch (e) { setError(e.message); setDeleting(null); }
   }
   return <section className="notes-section">
@@ -2129,7 +2127,7 @@ function SubjectNotes({ subject, onToast }) {
     <div className="notes-filters"><label className="notes-search"><Search size={15} /><input aria-label="Search notes" placeholder="Search notes" value={search} onChange={(e) => changeSearch(e.target.value)} /></label><label className="notes-filter-label">Show<select aria-label="Filter notes" className="notes-filter" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}><option value="all">All notes</option><option value="pinned">Pinned only</option></select></label></div>
     {error && <div className="inline-error">{error}<button type="button" onClick={load}>Retry</button></div>}
     {draft && <div className="card note-editor"><label>Title <span className="optional">Optional</span><input maxLength="160" placeholder="A title for this note" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label><label>Note<textarea autoFocus rows="9" maxLength="20000" required placeholder="Jot down your ideas…" value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} /></label><div className="note-editor-foot"><span>{saving ? "Saving…" : draft._id ? "Autosaved" : "Draft saved on this device"}</span><button type="button" className="btn ghost" onClick={() => { setDraft(null); localStorage.removeItem(storageKey); }}>Done</button></div></div>}
-    {loading ? <div className="table-loading">Loading notes…</div> : shown.length ? <><div className="notes-grid">{pageItems.map((note) => <article className="card note-card" key={note._id}><div className="note-card-head"><strong>{note.title || "Untitled note"}</strong><button type="button" className={`icon-btn small ${note.pinned ? "note-pinned" : ""}`} aria-label={note.pinned ? "Unpin note" : "Pin note"} title={note.pinned ? "Unpin note" : "Pin note"} onClick={() => togglePin(note)}><Pin size={14} /></button><button type="button" className="icon-btn small" aria-label="Edit note" onClick={() => setDraft(note)}><Edit2 size={14} /></button><button type="button" className="icon-btn small" aria-label="Delete note" onClick={() => setDeleting(note)}><Trash2 size={14} /></button></div><p className="note-preview">{note.content}</p><div className="note-card-actions"><button type="button" className="text-btn" onClick={() => setViewing(note)}>View note <ChevronRight size={14} /></button></div><div className="note-timestamps"><span>Created {new Date(note.createdAt).toLocaleString()}</span><span>Updated {new Date(note.updatedAt).toLocaleString()}</span></div></article>)}</div>{pageCount > 1 && <nav className="notes-pagination" aria-label="Notes pages"><span>{(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, shown.length)} of {shown.length}</span><div><button type="button" className="btn ghost" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage} of {pageCount}</span><button type="button" className="btn ghost" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></div></nav>}</> : !draft && <div className="card notes-empty"><FileText size={23} /><h3>{search ? "No matching notes" : "Jot down your first idea"}</h3><p>{search ? "Try another search." : "Keep thoughts, questions, and ideas here, separate from your sessions."}</p>{!search && <button type="button" className="btn secondary" onClick={startNew}>Write a note</button>}</div>}
+    {loading ? <div className="table-loading">Loading notes…</div> : items.length ? <><div className="notes-grid">{pageItems.map((note) => <article className="card note-card" key={note._id}><div className="note-card-head"><strong>{note.title || "Untitled note"}</strong><button type="button" className={`icon-btn small ${note.pinned ? "note-pinned" : ""}`} aria-label={note.pinned ? "Unpin note" : "Pin note"} title={note.pinned ? "Unpin note" : "Pin note"} onClick={() => togglePin(note)}><Pin size={14} /></button><button type="button" className="icon-btn small" aria-label="Edit note" onClick={() => setDraft(note)}><Edit2 size={14} /></button><button type="button" className="icon-btn small" aria-label="Delete note" onClick={() => setDeleting(note)}><Trash2 size={14} /></button></div><p className="note-preview">{note.content}</p><div className="note-card-actions"><button type="button" className="text-btn" onClick={() => setViewing(note)}>View note <ChevronRight size={14} /></button></div><div className="note-timestamps"><span>Created {new Date(note.createdAt).toLocaleString()}</span><span>Updated {new Date(note.updatedAt).toLocaleString()}</span></div></article>)}</div>{pageCount > 1 && <nav className="notes-pagination" aria-label="Notes pages"><span>{(currentPage - 1) * pagination.limit + 1}–{Math.min(currentPage * pagination.limit, pagination.total)} of {pagination.total}</span><div><button type="button" className="btn ghost" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage} of {pageCount}</span><button type="button" className="btn ghost" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></div></nav>}</> : !draft && <div className="card notes-empty"><FileText size={23} /><h3>{search ? "No matching notes" : "Jot down your first idea"}</h3><p>{search ? "Try another search." : "Keep thoughts, questions, and ideas here, separate from your sessions."}</p>{!search && <button type="button" className="btn secondary" onClick={startNew}>Write a note</button>}</div>}
     {viewing && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setViewing(null); }}><div className="note-view-dialog" role="dialog" aria-modal="true" aria-labelledby="note-view-title"><div className="modal-head"><div><div className="eyebrow">SUBJECT NOTE</div><h2 id="note-view-title">{viewing.title || "Untitled note"}</h2></div><button type="button" className="icon-btn" aria-label="Close note" onClick={() => setViewing(null)}><X size={18} /></button></div><div className="note-view-content">{viewing.content}</div><div className="note-timestamps"><span>Created {new Date(viewing.createdAt).toLocaleString()}</span><span>Updated {new Date(viewing.updatedAt).toLocaleString()}</span></div><div className="modal-actions"><button type="button" className="btn ghost" onClick={() => setViewing(null)}>Close</button><button type="button" className="btn secondary" onClick={() => { setDraft(viewing); setViewing(null); }}><Edit2 size={14} /> Edit</button></div></div></div>}
     {deleting && <ConfirmDialog title="Delete this note?" text="This note will be permanently removed." onClose={() => setDeleting(null)} onConfirm={() => removeNote(deleting)} />}
   </section>;

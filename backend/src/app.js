@@ -355,8 +355,19 @@ app.get("/api/learning/subjects/:subjectId/notes", asyncRoute(async (req, res) =
   if (!mongoose.isValidObjectId(req.params.subjectId)) return res.status(404).json({ error: "Learning subject not found." });
   const subject = await LearningSubject.findOne({ _id: req.params.subjectId, userId: userId(req) }).select("_id").lean();
   if (!subject) return res.status(404).json({ error: "Learning subject not found." });
-  const items = await Note.find({ userId: userId(req), subjectId: subject._id }).sort({ pinned: -1, updatedAt: -1 }).lean();
-  res.json({ items });
+  const requestedPage = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(5, Math.max(1, Number.parseInt(req.query.limit, 10) || 5));
+  const query = { userId: userId(req), subjectId: subject._id };
+  if (req.query.pinned === "true") query.pinned = true;
+  if (req.query.search) {
+    const search = String(req.query.search).slice(0, 80).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    query.$or = [{ title: new RegExp(search, "i") }, { content: new RegExp(search, "i") }];
+  }
+  const total = await Note.countDocuments(query);
+  const pages = Math.ceil(total / limit);
+  const page = Math.min(requestedPage, Math.max(1, pages));
+  const items = await Note.find(query).sort({ pinned: -1, updatedAt: -1 }).skip((page - 1) * limit).limit(limit).lean();
+  res.json({ items, pagination: { page, limit, total, pages } });
 }));
 app.post("/api/learning/subjects/:subjectId/notes", asyncRoute(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.subjectId)) return res.status(404).json({ error: "Learning subject not found." });
