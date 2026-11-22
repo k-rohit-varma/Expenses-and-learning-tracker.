@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Expense, WeeklyBudget } from "./models.js";
+import { CategoryBudget, Expense, WeeklyBudget } from "./models.js";
 import { addCalendarDays, budgetInput, budgetProgress, indiaDayStart, mondayOf, weeklyBudgetReport } from "./budget.js";
 
 test("weekly date helpers handle month and year boundaries in calendar dates", () => {
@@ -30,6 +30,7 @@ test("weekly progress handles 0%, 50%, 80%, 100%, over-budget and an unset budge
 test("weekly report counts Monday through Sunday, includes zero days and handles zero previous spend", async () => {
   const oldExpenseFind = Expense.find;
   const oldBudgetFind = WeeklyBudget.findOne;
+  const oldCategoryBudgetFind = CategoryBudget.find;
   try {
     Expense.find = (query) => {
       assert.equal(String(query.userId), "user-a");
@@ -44,6 +45,7 @@ test("weekly report counts Monday through Sunday, includes zero days and handles
       });
     };
     WeeklyBudget.findOne = (query) => { assert.equal(String(query.userId), "user-a"); return { lean: async () => ({ amountPaise: 300000 }) }; };
+    CategoryBudget.find = (query) => { assert.equal(String(query.userId), "user-a"); return { select() { return this; }, lean: async () => [{ _id: "allocation-1", category: "Food", amountPaise: 400000, description: "" }] }; };
     const report = await weeklyBudgetReport("user-a", "2026-10-19");
     assert.equal(report.weekEnd, "2026-10-25");
     assert.equal(report.spent, 3300);
@@ -55,13 +57,26 @@ test("weekly report counts Monday through Sunday, includes zero days and handles
     assert.deepEqual(report.categories.map((item) => item.name), ["Food", "Travel"]);
     assert.equal(report.previousSpent, 0);
     assert.equal(report.changePercent, null);
+    assert.equal(report.categoryBudgets[0].spent, 2400);
+    assert.equal(report.categoryBudgets[0].remaining, 1600);
+    assert.equal(report.categoryBudgets[0].status, "On Track");
+    assert.equal(report.allocated, 4000);
+    assert.equal(report.unallocated, -1000);
+    assert.equal(report.allocationsOverBudget, true);
   } finally {
     Expense.find = oldExpenseFind;
     WeeklyBudget.findOne = oldBudgetFind;
+    CategoryBudget.find = oldCategoryBudgetFind;
   }
 });
 
 test("weekly budget schema enforces one budget per user and week", () => {
   const indexes = WeeklyBudget.schema.indexes();
   assert.ok(indexes.some(([keys, options]) => keys.userId === 1 && keys.weekStart === 1 && options.unique));
+});
+
+test("category spending limits enforce a unique user, category, and week combination", () => {
+  const indexes = CategoryBudget.schema.indexes();
+  assert.ok(indexes.some(([keys, options]) => keys.userId === 1 && keys.category === 1 && keys.weekStart === 1 && options.unique));
+  assert.equal(CategoryBudget.schema.path("amountPaise").options.min, 1);
 });

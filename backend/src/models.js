@@ -97,6 +97,14 @@ const weeklyBudgetSchema = new Schema({
   amountPaise: { type: Number, required: true, min: 0 },
 }, { timestamps: true });
 weeklyBudgetSchema.index({ userId: 1, weekStart: 1 }, { unique: true });
+const categoryBudgetSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  category: { type: String, required: true, trim: true, maxlength: 60 },
+  weekStart: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
+  amountPaise: { type: Number, required: true, min: 1 },
+  description: { type: String, trim: true, maxlength: 240, default: "" },
+}, { timestamps: true });
+categoryBudgetSchema.index({ userId: 1, category: 1, weekStart: 1 }, { unique: true, collation: { locale: "en", strength: 2 } });
 const learningSubjectSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   name: { type: String, required: true, trim: true, maxlength: 60 },
@@ -182,6 +190,7 @@ export const User = mongoose.models.User || model("User", userSchema);
 export const DailyReview =
   mongoose.models.DailyReview || model("DailyReview", reviewSchema);
 export const WeeklyBudget = mongoose.models.WeeklyBudget || model("WeeklyBudget", weeklyBudgetSchema);
+export const CategoryBudget = mongoose.models.CategoryBudget || model("CategoryBudget", categoryBudgetSchema);
 export const LearningSubject = mongoose.models.LearningSubject || model("LearningSubject", learningSubjectSchema);
 export const Note = mongoose.models.Note || model("Note", noteSchema);
 export const FitnessExercise = mongoose.models.FitnessExercise || model("FitnessExercise", fitnessExerciseSchema);

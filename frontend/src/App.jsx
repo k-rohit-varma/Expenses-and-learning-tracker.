@@ -359,7 +359,7 @@ function App() {
               path="/expenses"
               element={<Expenses onToast={setToast} settings={settings} />}
             />
-            <Route path="/budget" element={<BudgetPage onToast={setToast} />} />
+            <Route path="/budget" element={<BudgetPage onToast={setToast} settings={settings} />} />
             <Route
               path="/learning/subjects/:subjectId"
               element={<LearningSubjectPage onToast={setToast} settings={settings} />}
@@ -1234,14 +1234,18 @@ function WeeklyOverview({ report, weekStart, onWeekChange, onCurrentWeek, onMana
   );
 }
 
-function BudgetPage({ onToast }) {
+function BudgetPage({ onToast, settings }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [weekStart, setWeekStart] = useState(() => monday(location.state?.weekStart || today));
   const [report, setReport] = useState(null);
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [limitForm, setLimitForm] = useState(null);
+  const [categoryExpenses, setCategoryExpenses] = useState(null);
+  const [limitBusy, setLimitBusy] = useState(false);
   const currentWeek = monday(today);
   async function load() {
     setLoading(true);
@@ -1269,6 +1273,31 @@ function BudgetPage({ onToast }) {
       onToast("Weekly budget saved.");
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
+  }
+  async function saveLimit(event) {
+    event.preventDefault();
+    const value = Number(limitForm.amount);
+    if (!Number.isFinite(value) || value <= 0) { setError("Enter a spending limit greater than zero."); return; }
+    setLimitBusy(true); setError("");
+    try {
+      const isEdit = Boolean(limitForm.id);
+      const result = await api(isEdit ? `/budgets/categories/${limitForm.id}` : "/budgets/categories", { method: isEdit ? "PUT" : "POST", body: JSON.stringify(isEdit ? { amount: value, description: limitForm.description || "" } : { weekStart, category: limitForm.category, amount: value, description: limitForm.description || "" }) });
+      setReport(result.report); setLimitForm(null); onToast(isEdit ? "Spending limit updated." : "Spending limit created.");
+    } catch (e) { setError(e.message); }
+    finally { setLimitBusy(false); }
+  }
+  async function deleteLimit(item) {
+    if (!window.confirm(`Delete the ${item.category} spending limit for this week? Expenses will remain unchanged.`)) return;
+    try { const result = await api(`/budgets/categories/${item.id}`, { method: "DELETE" }); setReport(result.report); onToast("Spending limit deleted."); }
+    catch (e) { setError(e.message); }
+  }
+  async function copyLimits() {
+    try { const result = await api("/budgets/categories/copy", { method: "POST", body: JSON.stringify({ weekStart }) }); setReport(result.report); onToast("Previous week’s limits copied."); }
+    catch (e) { setError(e.message); }
+  }
+  async function viewCategory(item) {
+    try { const result = await api(`/budgets/categories/${item.id}/expenses`); setCategoryExpenses({ category: item.category, items: result.items }); }
+    catch (e) { setError(e.message); }
   }
   const end = addDays(weekStart, 6);
   const budgetSet = report?.budget !== null && report?.budget !== undefined;
@@ -1304,8 +1333,21 @@ function BudgetPage({ onToast }) {
           <Card><SectionHead title="Daily spending" sub="All seven days, including days with no spending" /><ResponsiveContainer width="100%" height={265}><BarChart data={report.daily} margin={{ left: -15, right: 4, top: 12, bottom: 0 }}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="date" tickFormatter={(date) => new Intl.DateTimeFormat("en-IN", { weekday: "short", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`))} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><YAxis tickFormatter={compactMoney} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><Tooltip formatter={(value) => money(value)} labelFormatter={(date) => niceDate(`${date}T12:00:00`)} /><ReferenceLine y={report.budget / 7} stroke="#d79b4a" strokeDasharray="5 4" label={{ value: "Daily budget guide", fill: "var(--muted)", fontSize: 9 }} /><Bar dataKey="amount" name="Spent" fill="#6984e8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></Card>
         </div>
       </>}
+      <Card className="spending-limits">
+        <SectionHead title="My Spending Limits" sub="Weekly category allocations, calculated from your recorded expenses." action={<div className="limit-actions"><button className="btn secondary" onClick={copyLimits}>Copy previous week</button><button className="btn primary" onClick={() => setLimitForm({ category: (settings?.categories || categories)[0] || "", amount: "", description: "" })}><Plus size={15} /> Create Spending Limit</button></div>} />
+        {report.allocationsOverBudget && <div className="allocation-warning" role="status">Category allocations exceed the overall weekly budget by {money(Math.abs(report.unallocated))}. Adjust the category limits or overall budget; the weekly budget has not been changed.</div>}
+        <div className="allocation-summary"><span>Overall budget <b>{budgetSet ? money(report.budget) : "Not set"}</b></span><span>Allocated <b>{money(report.allocated)}</b></span><span>Unallocated <b>{budgetSet ? money(report.unallocated) : "Set an overall budget"}</b></span><span>Spent <b>{money(report.spent)}</b></span></div>
+        {report.categoryBudgets.length ? <div className="limit-grid">{report.categoryBudgets.map((item, index) => <article className="limit-card" key={item.id}>
+          <div className="limit-card-head"><span className="limit-icon">{["🍽️","🥤","🎬","🚗","🛍️","🛒","🧾","💊","📚","🧴"][index % 10]}</span><div><h3>{item.category}</h3><span className={`limit-status ${item.status.toLowerCase().replace(" ", "-")}`}>{item.status}</span></div><div className="limit-card-actions"><button className="icon-btn small" aria-label={`View ${item.category} expenses`} onClick={() => viewCategory(item)}><Eye size={15} /></button><button className="icon-btn small" aria-label={`Edit ${item.category} limit`} onClick={() => setLimitForm({ ...item, amount: String(item.allocated) })}><Edit2 size={14} /></button><button className="icon-btn small" aria-label={`Delete ${item.category} limit`} onClick={() => deleteLimit(item)}><Trash2 size={14} /></button></div></div>
+          <div className="limit-amount"><span>Allocated</span><strong>{money(item.allocated)}</strong></div><div className="limit-metrics"><span>Spent <b>{money(item.spent)}</b></span><span>Remaining <b>{money(item.remaining)}</b></span><span>Used <b>{item.percentUsed.toFixed(1)}%</b></span></div><div className="progress-track" role="progressbar" aria-label={`${item.category} budget used`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.min(100, Math.max(0, item.percentUsed))}><i style={{ width: `${Math.min(100, Math.max(0, item.percentUsed))}%`, background: item.status === "Exceeded" ? "#dc686a" : item.status === "Near Limit" ? "#e6a442" : "#6481e7" }} /></div>
+        </article>)}</div> : <Empty title="No category limits for this week" description="Create a limit to see category spending and remaining amounts here." action={<button className="btn primary small-btn" onClick={() => setLimitForm({ category: (settings?.categories || categories)[0] || "", amount: "", description: "" })}><Plus size={14} /> Create Spending Limit</button>} />}
+      </Card>
+      {report.categoryBudgets.length > 0 && <Card className="limit-analytics"><SectionHead title="Category spending comparison" sub="Allocated limits compared with actual weekly expenses" /><ResponsiveContainer width="100%" height={265}><BarChart data={report.categoryBudgets} margin={{ left: -12, right: 8, top: 10 }}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="category" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><YAxis tickFormatter={compactMoney} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><Tooltip formatter={(value) => money(value)} /><Bar dataKey="allocated" name="Allocated" fill="#98a8e8" radius={[4, 4, 0, 0]} /><Bar dataKey="spent" name="Spent" fill="#e29b5a" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer><p className="analytics-note">Highest spending: <b>{[...report.categoryBudgets].sort((a,b) => b.spent-a.spent)[0]?.category || "—"}</b> · Lowest remaining: <b>{[...report.categoryBudgets].sort((a,b) => a.remaining-b.remaining)[0]?.category || "—"}</b></p></Card>}
+      {report.categoryBudgets.length > 0 && <Card className="limit-analytics"><SectionHead title="Category weekly trends" sub="Actual recorded spending across the last eight weeks" /><ResponsiveContainer width="100%" height={265}><BarChart data={report.categoryTrend} margin={{ left: -12, right: 8, top: 10 }}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="weekStart" tickFormatter={(value) => niceDate(`${value}T12:00:00`).split(",")[0]} tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: "var(--muted)" }} /><YAxis tickFormatter={compactMoney} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><Tooltip labelFormatter={(value) => `Week of ${niceDate(`${value}T12:00:00`)}`} formatter={(value, name) => [money(value), name]} />{report.categoryBudgets.map((item, index) => <Bar key={item.id} dataKey={item.category} name={item.category} stackId="categories" fill={palette[index % palette.length]} />)}</BarChart></ResponsiveContainer></Card>}
       <Card className="weekly-comparison"><SectionHead title="Compared with last week" sub={`${money(report.previousSpent)} spent the previous week`} /><div><strong>{report.difference === 0 ? "Spending was unchanged" : report.difference > 0 ? `${money(report.difference)} more spent` : `${money(Math.abs(report.difference))} less spent`}</strong><span>{report.changePercent === null ? "No percentage comparison because last week had no spending." : `${Math.abs(report.changePercent).toFixed(1)}% ${report.changePercent > 0 ? "higher" : report.changePercent < 0 ? "lower" : "change"} than last week.`}</span></div><p>Average daily spending: <strong>{money(report.averageDaily)}</strong></p><p>Largest category this week: <strong>{report.categories[0]?.name || "No spending recorded"}</strong></p></Card>
     </>}
+    {limitForm && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="limit-form-title"><div className="modal-head"><div><div className="eyebrow">WEEKLY CATEGORY PLAN</div><h2 id="limit-form-title">{limitForm.id ? "Edit spending limit" : "Create spending limit"}</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setLimitForm(null)}><X size={18} /></button></div><form onSubmit={saveLimit}><div className="modal-fields">{!limitForm.id && <label>Category<select required value={limitForm.category} onChange={(e) => setLimitForm({ ...limitForm, category: e.target.value })}>{(settings?.categories || categories).map((category) => <option value={category} key={category}>{category}</option>)}</select></label>}<label>Weekly limit <span className="input-prefix"><b>₹</b><input type="number" min="0.01" step="0.01" required value={limitForm.amount} onChange={(e) => setLimitForm({ ...limitForm, amount: e.target.value })} /></span></label><label className="wide-field">Description <span className="optional">Optional</span><input maxLength="240" value={limitForm.description || ""} onChange={(e) => setLimitForm({ ...limitForm, description: e.target.value })} placeholder="A note about this limit" /></label></div>{error && <div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={() => setLimitForm(null)}>Cancel</button><button className="btn primary" disabled={limitBusy}>{limitBusy ? "Saving…" : "Save limit"}</button></div></form></div></div>}
+    {categoryExpenses && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="category-expenses-title"><div className="modal-head"><div><div className="eyebrow">{niceDate(`${weekStart}T12:00:00`)} – {niceDate(`${end}T12:00:00`)}</div><h2 id="category-expenses-title">{categoryExpenses.category} expenses</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setCategoryExpenses(null)}><X size={18} /></button></div>{categoryExpenses.items.length ? <div className="category-expense-list">{categoryExpenses.items.map((item) => <div key={item.id}><div><b>{item.description}</b><span>{niceDate(item.transactionDate)} · {item.paymentMethod}</span></div><strong>{money(item.amount)}</strong></div>)}</div> : <Empty title="No expenses this week" description="Expenses recorded in this category will appear here." />}<div className="modal-actions"><button className="btn secondary" onClick={() => { setCategoryExpenses(null); navigate("/expenses"); }}>Open Expenses</button><button className="btn primary" onClick={() => setCategoryExpenses(null)}>Done</button></div></div></div>}
   </>;
 }
 
@@ -1961,11 +2003,13 @@ function Learning(props) {
   const [customTo, setCustomTo] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [deletingSubject, setDeletingSubject] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [error, setError] = useState("");
   const [subjectsLoading, setSubjectsLoading] = useState(true);
   const loadSubjects = async () => {
     setSubjectsLoading(true);
-    try { setItems((await api("/learning/subjects")).items); setError(""); }
+    try { setItems((await api("/learning/subjects?includeArchived=true")).items); setError(""); }
     catch (e) { setError(e.message); }
     finally { setSubjectsLoading(false); }
   };
@@ -1993,7 +2037,21 @@ function Learning(props) {
       await api(`/learning/subjects/${subject._id}`, { method: "PATCH", body: JSON.stringify({ archived: !subject.archived }) });
       props.onToast(subject.archived ? "Subject restored." : "Subject archived.");
       await loadSubjects();
+      const updatedOverview = await api(`/learning/overview${overviewQuery}`);
+      setOverview(updatedOverview);
     } catch (e) { setError(e.message); }
+  }
+  async function deleteSubject() {
+    if (!deletingSubject) return;
+    setDeleteBusy(true);
+    try {
+      await api(`/learning/subjects/${deletingSubject._id}`, { method: "DELETE" });
+      props.onToast("Subject deleted. Its notes were removed and learning sessions were kept without a subject.");
+      setDeletingSubject(null);
+      await loadSubjects();
+      setOverview(await api(`/learning/overview${overviewQuery}`));
+    } catch (e) { setError(e.message); }
+    finally { setDeleteBusy(false); }
   }
   const active = items.filter((item) => !item.archived);
   const visibleItems = showArchived ? items.filter((item) => item.archived) : active;
@@ -2015,16 +2073,17 @@ function Learning(props) {
     {subjectsLoading ? <div className="table-loading">Loading learning subjects…</div> : visibleItems.length ? <div className="learning-subject-grid">{visibleItems.map((subject) => {
       const Icon = subjectIcons[subject.icon] || BookOpen;
       const progress = subject.weeklyGoalMinutes ? Math.min(100, subject.weekMinutes / subject.weeklyGoalMinutes * 100) : null;
-      return <Card className="learning-subject-card" key={subject._id}>
-        <button className="subject-card-open" onClick={() => navigate(`/learning/subjects/${subject._id}`)} aria-label={`Open ${subject.name}`}>
+      return <Card className={`learning-subject-card${subject.archived ? " archived-subject-card" : ""}`} key={subject._id}>
+        <button className="subject-card-open" disabled={subject.archived} onClick={() => navigate(`/learning/subjects/${subject._id}`)} aria-label={`Open ${subject.name}`}>
           <span className="subject-card-icon" style={{ color: subject.color, background: `${subject.color}1c` }}><Icon size={20} /></span><span className="subject-card-identity"><strong>{subject.name}</strong><small>{subject.description || "Learning subject"}</small></span>
         </button>
-        <div className="subject-card-stats"><div><span>Total time</span><strong>{duration(subject.totalMinutes)}</strong></div><div><span>Sessions</span><strong>{subject.sessionCount}</strong></div><div><span>This week</span><strong>{duration(subject.weekMinutes)}</strong></div><div><span>Last studied</span><strong>{subject.lastStudied ? relativeStudyDate(subject.lastStudied) : "Not yet"}</strong></div></div>
-        {progress !== null && <div className="subject-goal"><div><span>Weekly goal</span><strong>{Math.floor(progress)}% · {duration(subject.weeklyGoalMinutes)} goal</strong></div><div className="bar-track"><i style={{ width: `${progress}%`, background: subject.color }} /></div></div>}
-        <div className="subject-card-actions"><button className="text-btn" onClick={() => navigate(`/learning/subjects/${subject._id}`)}>Open subject <ChevronRight size={15} /></button><button className="icon-btn small" aria-label={`Edit ${subject.name}`} onClick={() => setEditing(subject)}><Edit2 size={14} /></button><button className="text-btn archive-subject-btn" onClick={() => archiveSubject(subject)}>{subject.archived ? "Restore" : "Archive"}</button></div>
+        {!subject.archived && <><div className="subject-card-stats"><div><span>Total time</span><strong>{duration(subject.totalMinutes)}</strong></div><div><span>Sessions</span><strong>{subject.sessionCount}</strong></div><div><span>This week</span><strong>{duration(subject.weekMinutes)}</strong></div><div><span>Last studied</span><strong>{subject.lastStudied ? relativeStudyDate(subject.lastStudied) : "Not yet"}</strong></div></div>
+        {progress !== null && <div className="subject-goal"><div><span>Weekly goal</span><strong>{Math.floor(progress)}% · {duration(subject.weeklyGoalMinutes)} goal</strong></div><div className="bar-track"><i style={{ width: `${progress}%`, background: subject.color }} /></div></div>}</>}
+        <div className="subject-card-actions">{!subject.archived && <><button className="text-btn" onClick={() => navigate(`/learning/subjects/${subject._id}`)}>Open subject <ChevronRight size={15} /></button><button className="icon-btn small" aria-label={`Edit ${subject.name}`} onClick={() => setEditing(subject)}><Edit2 size={14} /></button></>}<button className="text-btn archive-subject-btn" onClick={() => archiveSubject(subject)}>{subject.archived ? "Restore" : "Archive"}</button><button className="icon-btn small" aria-label={`Delete ${subject.name}`} onClick={() => setDeletingSubject(subject)}><Trash2 size={14} /></button></div>
       </Card>;
     })}</div> : <Card className="learning-empty"><span className="empty-icon"><BookOpen size={22} /></span><h2>{showArchived ? "No archived subjects" : "Start with a subject"}</h2><p>Create subjects such as Java, Japanese, or Data Structures, then log sessions under each one.</p>{!showArchived && <button className="btn primary" onClick={() => setEditing({})}><Plus size={16} /> Create your first subject</button>}</Card>}
     {editing && <SubjectEditor subject={editing._id ? editing : null} onClose={() => setEditing(null)} onSave={saveSubject} />}
+    {deletingSubject && <ConfirmDialog title="Delete this subject?" text={`Delete “${deletingSubject.name}”? Its notes will be deleted. Existing learning sessions will be retained but detached from this subject.`} confirmLabel="Delete subject" busy={deleteBusy} onClose={() => setDeletingSubject(null)} onConfirm={deleteSubject} />}
   </>;
 }
 
@@ -2723,6 +2782,7 @@ function Settings({ settings, onSettings, onToast }) {
   const navigate = useNavigate();
   const [form, setForm] = useState(null),
     [saving, setSaving] = useState(false),
+    [backupBusy, setBackupBusy] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
     if (settings)
@@ -2756,6 +2816,8 @@ function Settings({ settings, onSettings, onToast }) {
     setForm((f) => ({ ...f, [k]: v }));
   }
   const backup = async () => {
+    setBackupBusy(true);
+    setError("");
     try {
       const b = await api("/backup");
       const blob = new Blob([JSON.stringify(b, null, 2)], {
@@ -2764,12 +2826,15 @@ function Settings({ settings, onSettings, onToast }) {
         a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `lifeledger-backup-${today}.json`;
+      a.style.display = "none";
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
-      onToast("Your backup is ready.");
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      onToast(`Backup downloaded with ${Object.keys(b).filter((key) => Array.isArray(b[key])).length} data collections.`);
     } catch (e) {
       setError(e.message);
-    }
+    } finally { setBackupBusy(false); }
   };
   return (
     <>
@@ -2875,11 +2940,11 @@ function Settings({ settings, onSettings, onToast }) {
             <div className="settings-section-body">
               <h2>Your data, always yours</h2>
               <p>
-                Download a complete backup of your expenses, learning sessions,
-                reflections, and preferences.
+                Download your complete LifeLedger data, including expenses,
+                learning, budgets, notes, fitness, schedules, and preferences.
               </p>
-              <button className="btn secondary" onClick={backup}>
-                <Download size={16} /> Download JSON backup
+              <button className="btn secondary" disabled={backupBusy} onClick={backup}>
+                <Download size={16} /> {backupBusy ? "Preparing backup…" : "Download JSON backup"}
               </button>
               <span className="field-help">
                 Backups never include your password or session details.

@@ -9,7 +9,7 @@ import mongoose from "mongoose";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
-import { Expense, LearningSession, User, DailyReview, WeeklyBudget, LearningSubject, Note } from "./models.js";
+import { Expense, LearningSession, User, DailyReview, WeeklyBudget, CategoryBudget, LearningSubject, Note, FitnessExercise, Workout, RunningSession, Schedule } from "./models.js";
 import { asyncRoute, bounds, expenseInput, learningInput, localDay } from "./util.js";
 import { addCalendarDays, budgetInput, mondayOf, weeklyBudgetReport, weekStartSchema } from "./budget.js";
 import { fitnessRouter } from "./fitness.js";
@@ -222,8 +222,10 @@ const subjectStatsFor = (sessions, subjectId) => {
   };
 };
 app.get("/api/learning/subjects", asyncRoute(async (req, res) => {
+  const subjectQuery = { userId: userId(req) };
+  if (req.query.includeArchived !== "true") subjectQuery.archived = false;
   const [items, sessions] = await Promise.all([
-    LearningSubject.find({ userId: userId(req) }).sort({ archived: 1, name: 1 }).lean(),
+    LearningSubject.find(subjectQuery).sort({ archived: 1, name: 1 }).lean(),
     LearningSession.find({ userId: userId(req) }).select("subjectId subject durationMinutes sessionDate").lean(),
   ]);
   res.json({ items: items.map((item) => ({ ...item, ...subjectStatsFor(sessions, item._id) })) });
@@ -248,10 +250,9 @@ app.get("/api/learning/overview", asyncRoute(async (req, res) => {
   const start = req.query.from ? String(req.query.from) : req.query.range === "all" ? "2000-01-01" : req.query.range === "week" ? mondayOf(today) : req.query.range === "30d" ? dateKeyShift(today, -29) : monthStart;
   const end = req.query.to ? String(req.query.to) : today;
   const interval = bounds(start, end);
-  const [allSessions, subjects] = await Promise.all([
-    LearningSession.find({ userId: userId(req) }).select("subjectId durationMinutes sessionDate").lean(),
-    LearningSubject.find({ userId: userId(req) }).lean(),
-  ]);
+  const subjects = await LearningSubject.find({ userId: userId(req), archived: false }).select("_id name color icon").lean();
+  const activeSubjectIds = subjects.map((item) => item._id);
+  const allSessions = await LearningSession.find({ userId: userId(req), subjectId: { $in: activeSubjectIds } }).select("subjectId durationMinutes sessionDate").lean();
   const selected = req.query.range === "all" && !req.query.from
     ? allSessions
     : allSessions.filter((item) => item.sessionDate >= interval.$gte && item.sessionDate < interval.$lt);
@@ -289,7 +290,7 @@ app.get("/api/learning/overview", asyncRoute(async (req, res) => {
 }));
 app.get("/api/learning/subjects/:id", asyncRoute(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Learning subject not found." });
-  const subject = await LearningSubject.findOne({ _id: req.params.id, userId: userId(req) }).lean();
+  const subject = await LearningSubject.findOne({ _id: req.params.id, userId: userId(req), archived: false }).lean();
   if (!subject) return res.status(404).json({ error: "Learning subject not found." });
   const sessions = await LearningSession.find({ userId: userId(req), subjectId: subject._id }).sort({ sessionDate: -1 }).lean();
   const stats = subjectStatsFor(sessions, subject._id);
@@ -353,7 +354,7 @@ export const noteInput = zod.object({
 }).strict();
 app.get("/api/learning/subjects/:subjectId/notes", asyncRoute(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.subjectId)) return res.status(404).json({ error: "Learning subject not found." });
-  const subject = await LearningSubject.findOne({ _id: req.params.subjectId, userId: userId(req) }).select("_id").lean();
+  const subject = await LearningSubject.findOne({ _id: req.params.subjectId, userId: userId(req), archived: false }).select("_id").lean();
   if (!subject) return res.status(404).json({ error: "Learning subject not found." });
   const requestedPage = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(5, Math.max(1, Number.parseInt(req.query.limit, 10) || 5));
@@ -373,7 +374,7 @@ app.post("/api/learning/subjects/:subjectId/notes", asyncRoute(async (req, res) 
   if (!mongoose.isValidObjectId(req.params.subjectId)) return res.status(404).json({ error: "Learning subject not found." });
   const parsed = noteInput.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter valid note details." });
-  const subject = await LearningSubject.findOne({ _id: req.params.subjectId, userId: userId(req) }).select("_id").lean();
+  const subject = await LearningSubject.findOne({ _id: req.params.subjectId, userId: userId(req), archived: false }).select("_id").lean();
   if (!subject) return res.status(404).json({ error: "Learning subject not found." });
   const note = await Note.create({ ...parsed.data, userId: userId(req), subjectId: subject._id });
   res.status(201).json({ note });
@@ -553,8 +554,12 @@ app.get(
   asyncRoute(async (req, res) => {
     const { page, limit } = pageParams(req),
       q = listQuery(req, "sessionDate");
+    const activeSubjects = await LearningSubject.find({ userId: userId(req), archived: false }).select("_id").lean();
+    const activeSubjectIds = activeSubjects.map((item) => item._id);
+    q.subjectId = { $in: activeSubjectIds };
     if (req.query.subjectId) {
       if (!mongoose.isValidObjectId(req.query.subjectId)) return res.status(400).json({ error: "Choose a valid learning subject." });
+      if (!activeSubjectIds.some((id) => String(id) === String(req.query.subjectId))) return res.status(404).json({ error: "Learning subject not found." });
       q.subjectId = req.query.subjectId;
     } else if (req.query.subject) q.subject = String(req.query.subject);
     if (req.query.search) {
@@ -597,9 +602,11 @@ app.post(
 app.get(
   "/api/learning/:id",
   asyncRoute(async (req, res) => {
+    const activeSubjects = await LearningSubject.find({ userId: userId(req), archived: false }).select("_id").lean();
     const x = await LearningSession.findOne({
       _id: req.params.id,
       userId: userId(req),
+      subjectId: { $in: activeSubjects.map((item) => item._id) },
     });
     if (!x)
       return res.status(404).json({ error: "Learning session not found." });
@@ -611,7 +618,8 @@ app.patch(
   validate(learningInput.partial()),
   asyncRoute(async (req, res) => {
     const d = { ...req.validated };
-    const existing = await LearningSession.findOne({ _id: req.params.id, userId: userId(req) });
+    const activeSubjects = await LearningSubject.find({ userId: userId(req), archived: false }).select("_id").lean();
+    const existing = await LearningSession.findOne({ _id: req.params.id, userId: userId(req), subjectId: { $in: activeSubjects.map((item) => item._id) } });
     if (!existing) return res.status(404).json({ error: "Learning session not found." });
     if (d.subjectId) {
       const nextSubject = await LearningSubject.findOne({ _id: d.subjectId, userId: userId(req) });
@@ -664,6 +672,8 @@ app.get(
       ),
       monthEnd = new Date(Date.UTC(y, m, 1) - 19800000);
     const uid = userId(req);
+    const activeSubjects = await LearningSubject.find({ userId: uid, archived: false }).select("_id").lean();
+    const activeSubjectIds = activeSubjects.map((item) => item._id);
     const [expenses, learning, category, recent, subject, trend] =
       await Promise.all([
         Expense.find({
@@ -672,6 +682,7 @@ app.get(
         }).lean(),
         LearningSession.find({
           userId: uid,
+          subjectId: { $in: activeSubjectIds },
           sessionDate: { $gte: monthStart, $lt: monthEnd },
         }).lean(),
         Expense.aggregate([
@@ -692,6 +703,7 @@ app.get(
           {
             $match: {
               userId: uid,
+              subjectId: { $in: activeSubjectIds },
               sessionDate: { $gte: monthStart, $lt: monthEnd },
             },
           },
@@ -785,6 +797,54 @@ app.put("/api/budgets/weekly", asyncRoute(async (req, res) => {
   );
   res.json({ report: await weeklyBudgetReport(userId(req), weekStart) });
 }));
+const categoryBudgetInput = zod.object({ weekStart: weekStartSchema, category: zod.string().trim().min(1).max(60), amount: zod.number().finite().positive().max(100000000), description: zod.string().trim().max(240).optional().default("") }).strict();
+const validExpenseCategory = (req, category) => (req.user.settings?.categories || []).find((item) => item.toLocaleLowerCase() === category.toLocaleLowerCase());
+app.post("/api/budgets/categories", asyncRoute(async (req, res) => {
+  const parsed = categoryBudgetInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter a valid category spending limit." });
+  const { weekStart, category, amount, description } = parsed.data;
+  const canonicalCategory = validExpenseCategory(req, category);
+  if (!canonicalCategory) return res.status(400).json({ error: "Choose a category already available in your Expenses settings." });
+  try {
+    await CategoryBudget.create({ userId: userId(req), weekStart, category: canonicalCategory, amountPaise: toPaise(amount), description });
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: "A spending limit for this category and week already exists." });
+    throw error;
+  }
+  res.status(201).json({ report: await weeklyBudgetReport(userId(req), weekStart) });
+}));
+app.put("/api/budgets/categories/:id", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Spending limit not found." });
+  const parsed = zod.object({ amount: zod.number().finite().positive().max(100000000), description: zod.string().trim().max(240).optional().default("") }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter a valid category spending limit." });
+  const item = await CategoryBudget.findOneAndUpdate({ _id: req.params.id, userId: userId(req) }, { $set: { amountPaise: toPaise(parsed.data.amount), description: parsed.data.description } }, { new: true, runValidators: true });
+  if (!item) return res.status(404).json({ error: "Spending limit not found." });
+  res.json({ report: await weeklyBudgetReport(userId(req), item.weekStart) });
+}));
+app.delete("/api/budgets/categories/:id", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Spending limit not found." });
+  const item = await CategoryBudget.findOneAndDelete({ _id: req.params.id, userId: userId(req) });
+  if (!item) return res.status(404).json({ error: "Spending limit not found." });
+  res.json({ report: await weeklyBudgetReport(userId(req), item.weekStart) });
+}));
+app.post("/api/budgets/categories/copy", asyncRoute(async (req, res) => {
+  const parsed = zod.object({ weekStart: weekStartSchema }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Choose a valid Monday for the destination week." });
+  const weekStart = parsed.data.weekStart;
+  const previousWeek = addCalendarDays(weekStart, -7);
+  const previous = await CategoryBudget.find({ userId: userId(req), weekStart: previousWeek }).select("category amountPaise description").lean();
+  if (!previous.length) return res.status(400).json({ error: "There are no category limits in the previous week to copy." });
+  await CategoryBudget.bulkWrite(previous.map((item) => ({ updateOne: { filter: { userId: userId(req), weekStart, category: item.category }, update: { $setOnInsert: { userId: userId(req), weekStart, category: item.category, amountPaise: item.amountPaise, description: item.description } }, upsert: true } })), { ordered: false });
+  res.json({ report: await weeklyBudgetReport(userId(req), weekStart) });
+}));
+app.get("/api/budgets/categories/:id/expenses", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Spending limit not found." });
+  const item = await CategoryBudget.findOne({ _id: req.params.id, userId: userId(req) }).lean();
+  if (!item) return res.status(404).json({ error: "Spending limit not found." });
+  const nextWeek = addCalendarDays(item.weekStart, 7);
+  const rows = await Expense.find({ userId: userId(req), category: item.category, transactionDate: { $gte: indiaStart(item.weekStart), $lt: indiaStart(nextWeek) } }).select("_id description transactionDate amountPaise paymentMethod category").sort({ transactionDate: -1 }).limit(100).lean();
+  res.json({ items: rows.map((x) => ({ id: String(x._id), description: x.description, transactionDate: x.transactionDate, amount: x.amountPaise / 100, paymentMethod: x.paymentMethod, category: x.category })) });
+}));
 app.get(
   "/api/reports/expenses",
   asyncRoute(async (req, res) => {
@@ -820,8 +880,10 @@ app.get(
 app.get(
   "/api/reports/learning",
   asyncRoute(async (req, res) => {
-    const q = listQuery(req, "sessionDate"),
-      rows = await LearningSession.find(q).sort({ sessionDate: 1 }).lean(),
+    const q = listQuery(req, "sessionDate");
+    const activeSubjects = await LearningSubject.find({ userId: userId(req), archived: false }).select("_id").lean();
+    q.subjectId = { $in: activeSubjects.map((item) => item._id) };
+    const rows = await LearningSession.find(q).sort({ sessionDate: 1 }).lean(),
       subjects = {},
       days = {};
     for (const x of rows) {
@@ -914,20 +976,36 @@ app.put(
 app.get(
   "/api/backup",
   asyncRoute(async (req, res) => {
-    const [expenses, learning, learningSubjects, reviews] = await Promise.all([
-      Expense.find({ userId: userId(req) }).lean(),
-      LearningSession.find({ userId: userId(req) }).lean(),
-      LearningSubject.find({ userId: userId(req) }).lean(),
-      DailyReview.find({ userId: userId(req) }).lean(),
+    const owner = userId(req);
+    const [expenses, learning, learningSubjects, reviews, weeklyBudgets, categoryBudgets, notes, fitnessExercises, workouts, runningSessions, schedules] = await Promise.all([
+      Expense.find({ userId: owner }).lean(),
+      LearningSession.find({ userId: owner }).lean(),
+      LearningSubject.find({ userId: owner }).lean(),
+      DailyReview.find({ userId: owner }).lean(),
+      WeeklyBudget.find({ userId: owner }).lean(),
+      CategoryBudget.find({ userId: owner }).lean(),
+      Note.find({ userId: owner }).lean(),
+      FitnessExercise.find({ userId: owner }).lean(),
+      Workout.find({ userId: owner }).lean(),
+      RunningSession.find({ userId: owner }).lean(),
+      Schedule.find({ userId: owner }).lean(),
     ]);
     res.json({
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
+      account: { id: String(req.user._id), username: req.user.username, role: req.user.role, status: req.user.status, createdAt: req.user.createdAt, updatedAt: req.user.updatedAt },
       settings: req.user.settings,
       expenses: expenses.map((x) => ({ ...x, amount: x.amountPaise / 100 })),
       learning,
       learningSubjects,
       reviews,
+      weeklyBudgets,
+      categoryBudgets,
+      notes,
+      fitnessExercises,
+      workouts,
+      runningSessions,
+      schedules,
     });
   }),
 );
@@ -938,8 +1016,12 @@ app.get(
     if (!["expenses", "learning"].includes(type))
       return res.status(400).json({ error: "Unknown export type." });
     const expense = type === "expenses",
-      q = listQuery(req, expense ? "transactionDate" : "sessionDate"),
-      rows = expense
+      q = listQuery(req, expense ? "transactionDate" : "sessionDate");
+    if (!expense) {
+      const activeSubjects = await LearningSubject.find({ userId: userId(req), archived: false }).select("_id").lean();
+      q.subjectId = { $in: activeSubjects.map((item) => item._id) };
+    }
+    const rows = expense
         ? await Expense.find(q).sort({ transactionDate: 1 }).lean()
         : await LearningSession.find(q).sort({ sessionDate: 1 }).lean(),
       columns = expense

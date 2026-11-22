@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Expense, WeeklyBudget } from "./models.js";
+import { CategoryBudget, Expense, WeeklyBudget } from "./models.js";
 
 const DAY_MS = 86400000;
 const INDIA_OFFSET_MS = 19800000;
@@ -43,10 +43,13 @@ export async function weeklyBudgetReport(userId, weekStart) {
   const weekEnd = addCalendarDays(weekStart, 6);
   const nextWeek = addCalendarDays(weekStart, 7);
   const prevStart = addCalendarDays(weekStart, -7);
-  const [budget, rows, previousRows] = await Promise.all([
+  const trendStart = addCalendarDays(weekStart, -49);
+  const [budget, rows, previousRows, allocations, trendRows] = await Promise.all([
     WeeklyBudget.findOne({ userId, weekStart }).lean(),
     Expense.find({ userId, transactionDate: { $gte: indiaDayStart(weekStart), $lt: indiaDayStart(nextWeek) } }).select("amountPaise category transactionDate").lean(),
     Expense.find({ userId, transactionDate: { $gte: indiaDayStart(prevStart), $lt: indiaDayStart(weekStart) } }).select("amountPaise").lean(),
+    CategoryBudget.find({ userId, weekStart }).select("_id category amountPaise description").lean(),
+    Expense.find({ userId, transactionDate: { $gte: indiaDayStart(trendStart), $lt: indiaDayStart(nextWeek) } }).select("amountPaise category transactionDate").lean(),
   ]);
   const dailyAmounts = new Map();
   const categoryAmounts = new Map();
@@ -62,6 +65,22 @@ export async function weeklyBudgetReport(userId, weekStart) {
   const spentPaise = rows.reduce((sum, row) => sum + row.amountPaise, 0);
   const previousSpentPaise = previousRows.reduce((sum, row) => sum + row.amountPaise, 0);
   const budgetPaise = budget?.amountPaise ?? null;
+  const categoryBudgets = allocations.map((item) => {
+    const spentPaise = categoryAmounts.get(item.category)?.amountPaise || 0;
+    const progress = budgetProgress(item.amountPaise, spentPaise);
+    return { id: String(item._id), category: item.category, description: item.description, allocated: item.amountPaise / 100, spent: spentPaise / 100, remaining: progress.remainingPaise / 100, percentUsed: progress.percentUsed, status: spentPaise > item.amountPaise ? "Exceeded" : spentPaise / item.amountPaise >= 0.8 ? "Near Limit" : "On Track" };
+  }).sort((a, b) => a.category.localeCompare(b.category));
+  const allocatedPaise = allocations.reduce((sum, item) => sum + item.amountPaise, 0);
+  const categoryTrend = Array.from({ length: 8 }, (_, index) => {
+    const key = addCalendarDays(trendStart, index * 7);
+    const entries = new Map();
+    for (const row of trendRows) {
+      const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(row.transactionDate);
+      const rowWeek = mondayOf(date);
+      if (rowWeek === key) entries.set(row.category, (entries.get(row.category) || 0) + row.amountPaise);
+    }
+    return { weekStart: key, ...Object.fromEntries([...entries].map(([name, value]) => [name, value / 100])) };
+  });
   const today = todayIndia();
   const remainingDays = today < weekStart ? 7 : today > weekEnd ? 0 : Math.floor((new Date(`${weekEnd}T00:00:00Z`) - new Date(`${today}T00:00:00Z`)) / DAY_MS) + 1;
   const { remainingPaise, percentUsed } = budgetProgress(budgetPaise, spentPaise);
@@ -69,6 +88,11 @@ export async function weeklyBudgetReport(userId, weekStart) {
     weekStart,
     weekEnd,
     budget: budgetPaise === null ? null : budgetPaise / 100,
+    allocated: allocatedPaise / 100,
+    unallocated: budgetPaise === null ? null : (budgetPaise - allocatedPaise) / 100,
+    allocationsOverBudget: budgetPaise !== null && allocatedPaise > budgetPaise,
+    categoryBudgets,
+    categoryTrend,
     spent: spentPaise / 100,
     remaining: remainingPaise === null ? null : remainingPaise / 100,
     percentUsed,
