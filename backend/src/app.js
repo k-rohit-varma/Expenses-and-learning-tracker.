@@ -9,9 +9,9 @@ import mongoose from "mongoose";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
-import { Expense, LearningSession, User, DailyReview, WeeklyBudget, CategoryBudget, LearningSubject, Note, FitnessExercise, Workout, RunningSession, Schedule } from "./models.js";
+import { Expense, LearningSession, User, DailyReview, WeeklyBudget, CategoryBudget, MonthlyCategoryBudget, LearningSubject, Note, FitnessExercise, Workout, RunningSession, Schedule } from "./models.js";
 import { asyncRoute, bounds, expenseInput, learningInput, localDay } from "./util.js";
-import { addCalendarDays, budgetInput, mondayOf, weeklyBudgetReport, weekStartSchema } from "./budget.js";
+import { addCalendarDays, budgetInput, mondayOf, weeklyBudgetReport, weekStartSchema, monthKeySchema, nextMonthKey, previousMonthKey, monthlyCategoryBudgetReport } from "./budget.js";
 import { fitnessRouter } from "./fitness.js";
 import { scheduleRouter } from "./schedules.js";
 
@@ -82,7 +82,7 @@ const safeUser = (account) => ({ username: account.username, role: account.role,
 export const requireOwner = (req, res, next) => req.user?.role === "owner" ? next() : res.status(403).json({ error: "Owner access is required." });
 const pageParams = (req) => ({
   page: Math.max(1, Number.parseInt(req.query.page) || 1),
-  limit: Math.min(100, Math.max(1, Number.parseInt(req.query.limit) || 20)),
+  limit: String(req.query.limit).toLowerCase() === "all" ? 0 : Math.min(100, Math.max(1, Number.parseInt(req.query.limit) || 20)),
 });
 const expenseWire = (x) => ({ ...x.toObject(), amount: x.amountPaise / 100 });
 const toPaise = (x) => Math.round(x * 100);
@@ -357,7 +357,7 @@ app.get("/api/learning/subjects/:subjectId/notes", asyncRoute(async (req, res) =
   const subject = await LearningSubject.findOne({ _id: req.params.subjectId, userId: userId(req), archived: false }).select("_id").lean();
   if (!subject) return res.status(404).json({ error: "Learning subject not found." });
   const requestedPage = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
-  const limit = Math.min(5, Math.max(1, Number.parseInt(req.query.limit, 10) || 5));
+  const limit = String(req.query.limit).toLowerCase() === "all" ? 0 : Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 5));
   const query = { userId: userId(req), subjectId: subject._id };
   if (req.query.pinned === "true") query.pinned = true;
   if (req.query.search) {
@@ -365,10 +365,10 @@ app.get("/api/learning/subjects/:subjectId/notes", asyncRoute(async (req, res) =
     query.$or = [{ title: new RegExp(search, "i") }, { content: new RegExp(search, "i") }];
   }
   const total = await Note.countDocuments(query);
-  const pages = Math.ceil(total / limit);
+  const pages = limit ? Math.ceil(total / limit) : 1;
   const page = Math.min(requestedPage, Math.max(1, pages));
   const items = await Note.find(query).sort({ pinned: -1, updatedAt: -1 }).skip((page - 1) * limit).limit(limit).lean();
-  res.json({ items, pagination: { page, limit, total, pages } });
+  res.json({ items, pagination: { page, limit: limit || total || 1, total, pages } });
 }));
 app.post("/api/learning/subjects/:subjectId/notes", asyncRoute(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.subjectId)) return res.status(404).json({ error: "Learning subject not found." });
@@ -405,7 +405,7 @@ app.delete("/api/learning/subjects/:id", asyncRoute(async (req, res) => {
 }));
 app.get("/api/users", requireOwner, asyncRoute(async (req, res) => {
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
-  const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+  const limit = String(req.query.limit).toLowerCase() === "all" ? 0 : Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
   const query = { role: "user" };
   if (["pending_approval", "active", "blocked", "rejected"].includes(req.query.status)) query.status = req.query.status;
   else if (req.query.status && req.query.status !== "all") return res.status(400).json({ error: "Invalid account status filter." });
@@ -415,7 +415,7 @@ app.get("/api/users", requireOwner, asyncRoute(async (req, res) => {
     User.countDocuments(query),
     User.findOne({ role: "owner" }).select("username role status createdAt lastLoginAt").lean(),
   ]);
-  res.json({ items, admin, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+  res.json({ items, admin, pagination: { page, limit: limit || total || 1, total, pages: limit ? Math.ceil(total / limit) : 1 } });
 }));
 app.get("/api/users/pending", requireOwner, asyncRoute(async (_req, res) => {
   const items = await User.find({ role: "user", status: "pending_approval" }).select("username role status createdAt lastLoginAt").sort({ createdAt: 1 }).lean();
@@ -481,7 +481,7 @@ app.get(
     };
     res.json({
       items: items.map(expenseWire),
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      pagination: { page, limit: limit || total || 1, total, pages: limit ? Math.ceil(total / limit) : 1 },
       summary: {
         totalAmount: summary.totalAmountPaise / 100,
         count: summary.count,
@@ -580,7 +580,7 @@ app.get(
     ]);
     res.json({
       items,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      pagination: { page, limit: limit || total || 1, total, pages: limit ? Math.ceil(total / limit) : 1 },
     });
   }),
 );
@@ -740,7 +740,18 @@ app.get(
             a + (k === "transactionDate" ? x.amountPaise : x.durationMinutes),
           0,
         );
-    const weeklyBudget = await weeklyBudgetReport(uid, mondayOf(stamp));
+    const [weeklyBudget, monthlyCategoryBudget, hiddenCategoryRows] = await Promise.all([
+      weeklyBudgetReport(uid, mondayOf(stamp)),
+      req.user.settings.showMonthlyCategoryBudgetsInOverview
+        ? monthlyCategoryBudgetReport(uid, stamp.slice(0, 7), req.user.settings.monthlyBudgetPaise || 0, expenses)
+        : null,
+      req.user.settings.showMonthlyCategoryBudgetsInOverview
+        ? null
+        : MonthlyCategoryBudget.find({ userId: uid, month: stamp.slice(0, 7), showInOverview: false }).select("category").lean(),
+    ]);
+    const hiddenOverviewCategories = monthlyCategoryBudget
+      ? monthlyCategoryBudget.categoryBudgets.filter((item) => item.showInOverview === false).map((item) => item.category)
+      : (hiddenCategoryRows || []).map((item) => item.category);
     res.json({
       today: {
         spent: sum(expenses, "transactionDate", start, dayEnd) / 100,
@@ -772,6 +783,8 @@ app.get(
         ),
       },
       weeklyBudget,
+      monthlyCategoryBudget,
+      hiddenOverviewCategories,
       categories: category.map((x) => ({ name: x._id, value: x.value / 100 })),
       subjects: subject.map((x) => ({ name: x._id, value: x.value })),
       recent: recent.map((x) => ({ ...x, amount: x.amountPaise / 100 })),
@@ -799,6 +812,59 @@ app.put("/api/budgets/weekly", asyncRoute(async (req, res) => {
 }));
 const categoryBudgetInput = zod.object({ weekStart: weekStartSchema, category: zod.string().trim().min(1).max(60), amount: zod.number().finite().positive().max(100000000), description: zod.string().trim().max(240).optional().default("") }).strict();
 const validExpenseCategory = (req, category) => (req.user.settings?.categories || []).find((item) => item.toLocaleLowerCase() === category.toLocaleLowerCase());
+const monthlyCategoryBudgetInput = zod.object({ month: monthKeySchema, category: zod.string().trim().min(1).max(60), amount: zod.number().finite().positive().max(100000000), description: zod.string().trim().max(240).optional().default(""), showInOverview: zod.boolean().optional().default(true), includeInOverallBudget: zod.boolean().optional().default(true) }).strict();
+const monthlyBudgetReportFor = (req, month, rows = null) => monthlyCategoryBudgetReport(userId(req), month, req.user.settings.monthlyBudgetPaise || 0, rows);
+app.get("/api/budgets/monthly", asyncRoute(async (req, res) => {
+  const parsed = monthKeySchema.safeParse(req.query.month);
+  if (!parsed.success) return res.status(400).json({ error: "Choose a valid month in YYYY-MM format." });
+  res.json({ report: await monthlyBudgetReportFor(req, parsed.data) });
+}));
+app.post("/api/budgets/monthly/categories", asyncRoute(async (req, res) => {
+  const parsed = monthlyCategoryBudgetInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter a valid monthly category budget." });
+  const { month, amount, description } = parsed.data;
+  const category = validExpenseCategory(req, parsed.data.category);
+  if (!category) return res.status(400).json({ error: "Choose a category already available in your Expenses settings." });
+  const { showInOverview, includeInOverallBudget } = parsed.data;
+  try { await MonthlyCategoryBudget.create({ userId: userId(req), month, category, amountPaise: toPaise(amount), description, showInOverview, includeInOverallBudget }); }
+  catch (error) { if (error.code === 11000) return res.status(409).json({ error: "A budget for this category and month already exists." }); throw error; }
+  res.status(201).json({ report: await monthlyBudgetReportFor(req, month) });
+}));
+app.put("/api/budgets/monthly/categories/:id", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Monthly category budget not found." });
+  const parsed = zod.object({ amount: zod.number().finite().positive().max(100000000), description: zod.string().trim().max(240).optional().default(""), showInOverview: zod.boolean().optional(), includeInOverallBudget: zod.boolean().optional() }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter a valid monthly category budget." });
+  const { amount, description, showInOverview, includeInOverallBudget } = parsed.data;
+  const update = { amountPaise: toPaise(amount), description };
+  if (showInOverview !== undefined) update.showInOverview = showInOverview;
+  if (includeInOverallBudget !== undefined) update.includeInOverallBudget = includeInOverallBudget;
+  const item = await MonthlyCategoryBudget.findOneAndUpdate({ _id: req.params.id, userId: userId(req) }, { $set: update }, { new: true, runValidators: true });
+  if (!item) return res.status(404).json({ error: "Monthly category budget not found." });
+  res.json({ report: await monthlyBudgetReportFor(req, item.month) });
+}));
+app.delete("/api/budgets/monthly/categories/:id", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Monthly category budget not found." });
+  const item = await MonthlyCategoryBudget.findOneAndDelete({ _id: req.params.id, userId: userId(req) });
+  if (!item) return res.status(404).json({ error: "Monthly category budget not found." });
+  res.json({ report: await monthlyBudgetReportFor(req, item.month) });
+}));
+app.post("/api/budgets/monthly/categories/copy", asyncRoute(async (req, res) => {
+  const parsed = zod.object({ month: monthKeySchema }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Choose a valid destination month." });
+  const { month } = parsed.data;
+  const previous = await MonthlyCategoryBudget.find({ userId: userId(req), month: previousMonthKey(month) }).select("category amountPaise description showInOverview includeInOverallBudget").lean();
+  if (!previous.length) return res.status(400).json({ error: "There are no category budgets in the previous month to copy." });
+  await MonthlyCategoryBudget.bulkWrite(previous.map((item) => ({ updateOne: { filter: { userId: userId(req), month, category: item.category }, update: { $setOnInsert: { userId: userId(req), month, category: item.category, amountPaise: item.amountPaise, description: item.description, showInOverview: item.showInOverview !== false, includeInOverallBudget: item.includeInOverallBudget !== false } }, upsert: true } })), { ordered: false });
+  res.json({ report: await monthlyBudgetReportFor(req, month) });
+}));
+app.get("/api/budgets/monthly/categories/:id/expenses", asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: "Monthly category budget not found." });
+  const item = await MonthlyCategoryBudget.findOne({ _id: req.params.id, userId: userId(req) }).lean();
+  if (!item) return res.status(404).json({ error: "Monthly category budget not found." });
+  const nextMonth = nextMonthKey(item.month);
+  const rows = await Expense.find({ userId: userId(req), category: item.category, transactionDate: { $gte: indiaStart(`${item.month}-01`), $lt: indiaStart(`${nextMonth}-01`) } }).select("_id description transactionDate amountPaise paymentMethod category").sort({ transactionDate: -1 }).lean();
+  res.json({ items: rows.map((x) => ({ id: String(x._id), description: x.description, transactionDate: x.transactionDate, amount: x.amountPaise / 100, paymentMethod: x.paymentMethod, category: x.category })) });
+}));
 app.post("/api/budgets/categories", asyncRoute(async (req, res) => {
   const parsed = categoryBudgetInput.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Enter a valid category spending limit." });
@@ -915,6 +981,7 @@ app.patch(
     const z = zod
       .object({
         monthlyBudget: zod.number().min(0).max(100000000).optional(),
+        showMonthlyCategoryBudgetsInOverview: zod.boolean().optional(),
         dailyGoalMinutes: zod.number().int().min(1).max(1440).optional(),
         weeklyGoalMinutes: zod.number().int().min(1).max(10080).optional(),
         timezone: zod.literal("Asia/Kolkata").optional(),
@@ -977,13 +1044,14 @@ app.get(
   "/api/backup",
   asyncRoute(async (req, res) => {
     const owner = userId(req);
-    const [expenses, learning, learningSubjects, reviews, weeklyBudgets, categoryBudgets, notes, fitnessExercises, workouts, runningSessions, schedules] = await Promise.all([
+    const [expenses, learning, learningSubjects, reviews, weeklyBudgets, categoryBudgets, monthlyCategoryBudgets, notes, fitnessExercises, workouts, runningSessions, schedules] = await Promise.all([
       Expense.find({ userId: owner }).lean(),
       LearningSession.find({ userId: owner }).lean(),
       LearningSubject.find({ userId: owner }).lean(),
       DailyReview.find({ userId: owner }).lean(),
       WeeklyBudget.find({ userId: owner }).lean(),
       CategoryBudget.find({ userId: owner }).lean(),
+      MonthlyCategoryBudget.find({ userId: owner }).lean(),
       Note.find({ userId: owner }).lean(),
       FitnessExercise.find({ userId: owner }).lean(),
       Workout.find({ userId: owner }).lean(),
@@ -1001,6 +1069,7 @@ app.get(
       reviews,
       weeklyBudgets,
       categoryBudgets,
+      monthlyCategoryBudgets,
       notes,
       fitnessExercises,
       workouts,

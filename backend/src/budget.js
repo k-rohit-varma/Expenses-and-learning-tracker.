@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CategoryBudget, Expense, WeeklyBudget } from "./models.js";
+import { CategoryBudget, Expense, MonthlyCategoryBudget, WeeklyBudget } from "./models.js";
 
 const DAY_MS = 86400000;
 const INDIA_OFFSET_MS = 19800000;
@@ -7,6 +7,7 @@ export const weekStartSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((v
   const date = new Date(`${value}T00:00:00Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value && date.getUTCDay() === 1;
 }, "Week must start on a valid Monday.");
+export const monthKeySchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 export const budgetInput = z.object({
   weekStart: weekStartSchema,
   amount: z.number().finite().min(0).max(100000000),
@@ -25,6 +26,16 @@ export function mondayOf(date) {
 }
 export function indiaDayStart(date) {
   return new Date(new Date(`${date}T00:00:00Z`).getTime() - INDIA_OFFSET_MS);
+}
+export function nextMonthKey(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNumber, 1));
+  return date.toISOString().slice(0, 7);
+}
+export function previousMonthKey(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNumber - 2, 1));
+  return date.toISOString().slice(0, 7);
 }
 export function budgetProgress(budgetPaise, spentPaise) {
   if (budgetPaise === null || budgetPaise === undefined) return { remainingPaise: null, percentUsed: null };
@@ -105,5 +116,38 @@ export async function weeklyBudgetReport(userId, weekStart) {
     previousSpent: previousSpentPaise / 100,
     difference: (spentPaise - previousSpentPaise) / 100,
     changePercent: previousSpentPaise ? (spentPaise - previousSpentPaise) / previousSpentPaise * 100 : null,
+  };
+}
+
+export async function monthlyCategoryBudgetReport(userId, month, monthlyBudgetPaise = 0, expenseRows = null) {
+  if (!monthKeySchema.safeParse(month).success) return null;
+  const monthStart = `${month}-01`;
+  const nextMonth = nextMonthKey(month);
+  const [allocations, rows] = await Promise.all([
+    MonthlyCategoryBudget.find({ userId, month }).select("_id category amountPaise description showInOverview includeInOverallBudget").lean(),
+    expenseRows === null
+      ? Expense.find({ userId, transactionDate: { $gte: indiaDayStart(monthStart), $lt: indiaDayStart(`${nextMonth}-01`) } }).select("amountPaise category description transactionDate paymentMethod").lean()
+      : Promise.resolve(expenseRows),
+  ]);
+  const spentByCategory = new Map();
+  for (const row of rows) spentByCategory.set(row.category, (spentByCategory.get(row.category) || 0) + row.amountPaise);
+  const spentPaise = rows.reduce((sum, row) => sum + row.amountPaise, 0);
+  const allocatedPaise = allocations.reduce((sum, item) => sum + (item.includeInOverallBudget === false ? 0 : item.amountPaise), 0);
+  const categoryBudgets = allocations.map((item) => {
+    const categorySpent = spentByCategory.get(item.category) || 0;
+    const progress = budgetProgress(item.amountPaise, categorySpent);
+    return { id: String(item._id), category: item.category, description: item.description, allocated: item.amountPaise / 100, spent: categorySpent / 100, remaining: progress.remainingPaise / 100, percentUsed: progress.percentUsed, status: categorySpent > item.amountPaise ? "Exceeded" : categorySpent / item.amountPaise >= 0.8 ? "Near Limit" : "On Track", showInOverview: item.showInOverview !== false, includeInOverallBudget: item.includeInOverallBudget !== false };
+  }).sort((a, b) => a.category.localeCompare(b.category));
+  return {
+    month,
+    monthlyBudget: monthlyBudgetPaise / 100,
+    allocated: allocatedPaise / 100,
+    spent: spentPaise / 100,
+    remaining: (monthlyBudgetPaise - spentPaise) / 100,
+    unallocated: (monthlyBudgetPaise - allocatedPaise) / 100,
+    allocationsOverBudget: allocatedPaise > monthlyBudgetPaise,
+    percentUsed: monthlyBudgetPaise > 0 ? Math.round(spentPaise / monthlyBudgetPaise * 10000) / 100 : null,
+    expenseCount: rows.length,
+    categoryBudgets,
   };
 }

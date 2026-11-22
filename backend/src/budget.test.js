@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CategoryBudget, Expense, WeeklyBudget } from "./models.js";
-import { addCalendarDays, budgetInput, budgetProgress, indiaDayStart, mondayOf, weeklyBudgetReport } from "./budget.js";
+import { CategoryBudget, Expense, MonthlyCategoryBudget, WeeklyBudget } from "./models.js";
+import { addCalendarDays, budgetInput, budgetProgress, indiaDayStart, mondayOf, monthlyCategoryBudgetReport, nextMonthKey, previousMonthKey, weeklyBudgetReport } from "./budget.js";
 
 test("weekly date helpers handle month and year boundaries in calendar dates", () => {
   assert.equal(mondayOf("2026-11-01"), "2026-10-26");
@@ -79,4 +79,69 @@ test("category spending limits enforce a unique user, category, and week combina
   const indexes = CategoryBudget.schema.indexes();
   assert.ok(indexes.some(([keys, options]) => keys.userId === 1 && keys.category === 1 && keys.weekStart === 1 && options.unique));
   assert.equal(CategoryBudget.schema.path("amountPaise").options.min, 1);
+});
+
+test("monthly month navigation handles year boundaries and rejects invalid months", async () => {
+  assert.equal(nextMonthKey("2026-12"), "2027-01");
+  assert.equal(previousMonthKey("2026-01"), "2025-12");
+  assert.equal(await monthlyCategoryBudgetReport("user-a", "2026-13", 2000000), null);
+});
+
+test("monthly category allocations summarize real expense rows without double counting", async () => {
+  const oldFind = MonthlyCategoryBudget.find;
+  try {
+    MonthlyCategoryBudget.find = (query) => {
+      assert.equal(String(query.userId), "user-a");
+      assert.equal(query.month, "2026-06");
+      return { select() { return this; }, lean: async () => [
+        { _id: "food-limit", category: "Food", amountPaise: 500000, description: "Meals" },
+        { _id: "snacks-limit", category: "Snacks", amountPaise: 150000, description: "" },
+      ] };
+    };
+    const report = await monthlyCategoryBudgetReport("user-a", "2026-06", 2000000, [
+      { category: "Food", amountPaise: 10000 },
+      { category: "Food", amountPaise: 15000 },
+      { category: "Food", amountPaise: 20000 },
+      { category: "Snacks", amountPaise: 90000 },
+    ]);
+    assert.equal(report.spent, 1350);
+    assert.equal(report.allocated, 6500);
+    assert.equal(report.unallocated, 13500);
+    assert.equal(report.remaining, 18650);
+    assert.equal(report.categoryBudgets.find((x) => x.category === "Food").spent, 450);
+    assert.equal(report.categoryBudgets.find((x) => x.category === "Snacks").percentUsed, 60);
+    assert.equal(report.expenseCount, 4);
+  } finally { MonthlyCategoryBudget.find = oldFind; }
+});
+
+test("monthly category budget schema is positive and unique per user, category, and month", () => {
+  const indexes = MonthlyCategoryBudget.schema.indexes();
+  assert.ok(indexes.some(([keys, options]) => keys.userId === 1 && keys.category === 1 && keys.month === 1 && options.unique));
+  assert.equal(MonthlyCategoryBudget.schema.path("amountPaise").options.min, 1);
+  assert.equal(MonthlyCategoryBudget.schema.path("showInOverview").defaultValue, true);
+  assert.equal(MonthlyCategoryBudget.schema.path("includeInOverallBudget").defaultValue, true);
+});
+
+test("monthly category visibility and allocation toggles independently control display and allocation totals", async () => {
+  const oldFind = MonthlyCategoryBudget.find;
+  const toggles = [
+    { category: "Food", amountPaise: 10000, showInOverview: true, includeInOverallBudget: true },
+    { category: "Snacks", amountPaise: 20000, showInOverview: true, includeInOverallBudget: false },
+    { category: "Travel", amountPaise: 30000, showInOverview: false, includeInOverallBudget: true },
+    { category: "Health", amountPaise: 40000, showInOverview: false, includeInOverallBudget: false },
+  ];
+  try {
+    MonthlyCategoryBudget.find = () => ({ select() { return this; }, lean: async () => toggles.map((item) => ({ ...item, _id: item.category })) });
+    const report = await monthlyCategoryBudgetReport("user-a", "2026-06", 200000, toggles.map((item) => ({ category: item.category, amountPaise: 1000 })));
+    assert.deepEqual(Object.fromEntries(report.categoryBudgets.map((item) => [item.category, [item.showInOverview, item.includeInOverallBudget]])), {
+      Food: [true, true], Snacks: [true, false], Travel: [false, true], Health: [false, false],
+    });
+    assert.equal(report.categoryBudgets.filter((item) => item.showInOverview).length, 2);
+    assert.equal(report.allocated, 400);
+    assert.equal(report.unallocated, 1600);
+    assert.equal(report.spent, 40);
+    assert.equal(report.remaining, 1960);
+    assert.equal(report.categoryBudgets.find((item) => item.category === "Snacks").spent, 10);
+    assert.equal(report.categoryBudgets.find((item) => item.category === "Health").spent, 10);
+  } finally { MonthlyCategoryBudget.find = oldFind; }
 });

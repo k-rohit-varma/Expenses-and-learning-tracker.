@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { app } from './app.js';
 import { config } from './config.js';
-import { User, WeeklyBudget, CategoryBudget, LearningSubject } from './models.js';
+import { User, WeeklyBudget, CategoryBudget, MonthlyCategoryBudget, LearningSubject } from './models.js';
 import { migrateLegacyLearningSubjects } from './learningMigration.js';
 
 if (!config.mongoUri || !config.authSecret || !config.username || !config.password) {
@@ -13,6 +13,7 @@ const passwordHash = await bcrypt.hash(config.password, 12);
 await User.init();
 await WeeklyBudget.createIndexes();
 await CategoryBudget.createIndexes();
+await MonthlyCategoryBudget.createIndexes();
 await LearningSubject.createIndexes();
 let owner = await User.findOne({ role: 'owner' });
 if (!owner) {

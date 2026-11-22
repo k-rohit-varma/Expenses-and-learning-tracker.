@@ -98,7 +98,7 @@ scheduleRouter.get("/conflicts", asyncRoute(async (req, res) => {
   res.json({ conflicts });
 }));
 scheduleRouter.get("/", asyncRoute(async (req, res) => {
-  const parsed = z.object({ from: date, to: date, search: z.string().max(80).optional().default(""), category: z.enum(categories).optional(), status: z.enum(["pending", "completed", "skipped", "all"]).optional().default("all"), recurring: z.enum(["yes", "no", "all"]).optional().default("all"), page: z.coerce.number().int().min(1).default(1), limit: z.coerce.number().int().min(1).max(100).default(100) }).safeParse(req.query);
+  const parsed = z.object({ from: date, to: date, search: z.string().max(80).optional().default(""), category: z.enum(categories).optional(), status: z.enum(["pending", "completed", "skipped", "all"]).optional().default("all"), recurring: z.enum(["yes", "no", "all"]).optional().default("all"), page: z.coerce.number().int().min(1).default(1), limit: z.string().optional().default("100").refine((value) => value === "all" || (/^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= 100), "Page size must be 1–100 or all.").transform((value) => value === "all" ? 0 : Number(value)) }).safeParse(req.query);
   if (!parsed.success) return fail(res, 400, parsed.error.issues[0]?.message || "Use valid date filters.");
   const f = parsed.data;
   if (f.to < f.from) return fail(res, 400, "End date must be on or after start date.");
@@ -115,7 +115,7 @@ scheduleRouter.get("/", asyncRoute(async (req, res) => {
   if (f.recurring !== "all") items = items.filter((x) => x.recurring === (f.recurring === "yes"));
   items.sort((a, b) => a.occurrenceDate.localeCompare(b.occurrenceDate) || (a.allDay ? "00:00" : a.startTime).localeCompare(b.allDay ? "00:00" : b.startTime) || a.title.localeCompare(b.title));
   const summary = { totalEvents: items.length, completed: items.filter((x) => x.status === "completed").length, remaining: items.filter((x) => x.status === "pending").length, missed: items.filter((x) => x.status === "skipped").length, plannedMinutes: items.reduce((sum, x) => { if (x.allDay) return sum + 1440; const start = Number(x.startTime.slice(0, 2)) * 60 + Number(x.startTime.slice(3)); const end = Number(x.endTime.slice(0, 2)) * 60 + Number(x.endTime.slice(3)); return sum + end - start; }, 0) };
-  res.json({ items: items.slice((f.page - 1) * f.limit, f.page * f.limit), summary, pagination: { page: f.page, limit: f.limit, total: items.length, pages: Math.ceil(items.length / f.limit) } });
+  res.json({ items: f.limit ? items.slice((f.page - 1) * f.limit, f.page * f.limit) : items, summary, pagination: { page: f.page, limit: f.limit || items.length || 1, total: items.length, pages: f.limit ? Math.ceil(items.length / f.limit) : 1 } });
 }));
 scheduleRouter.post("/", asyncRoute(async (req, res) => {
   const parsed = scheduleInput.safeParse(req.body);

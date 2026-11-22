@@ -56,6 +56,7 @@ const userSchema = new Schema(
     lastLoginAt: { type: Date, default: null },
     settings: {
       monthlyBudgetPaise: { type: Number, default: 0 },
+      showMonthlyCategoryBudgetsInOverview: { type: Boolean, default: false },
       dailyGoalMinutes: { type: Number, default: 60 },
       weeklyGoalMinutes: { type: Number, default: 420 },
       timezone: { type: String, default: "Asia/Kolkata" },
@@ -105,6 +106,16 @@ const categoryBudgetSchema = new Schema({
   description: { type: String, trim: true, maxlength: 240, default: "" },
 }, { timestamps: true });
 categoryBudgetSchema.index({ userId: 1, category: 1, weekStart: 1 }, { unique: true, collation: { locale: "en", strength: 2 } });
+const monthlyCategoryBudgetSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  category: { type: String, required: true, trim: true, maxlength: 60 },
+  month: { type: String, required: true, match: /^\d{4}-(0[1-9]|1[0-2])$/ },
+  amountPaise: { type: Number, required: true, min: 1 },
+  description: { type: String, trim: true, maxlength: 240, default: "" },
+  showInOverview: { type: Boolean, default: true },
+  includeInOverallBudget: { type: Boolean, default: true },
+}, { timestamps: true });
+monthlyCategoryBudgetSchema.index({ userId: 1, category: 1, month: 1 }, { unique: true, collation: { locale: "en", strength: 2 } });
 const learningSubjectSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   name: { type: String, required: true, trim: true, maxlength: 60 },
@@ -191,6 +202,7 @@ export const DailyReview =
   mongoose.models.DailyReview || model("DailyReview", reviewSchema);
 export const WeeklyBudget = mongoose.models.WeeklyBudget || model("WeeklyBudget", weeklyBudgetSchema);
 export const CategoryBudget = mongoose.models.CategoryBudget || model("CategoryBudget", categoryBudgetSchema);
+export const MonthlyCategoryBudget = mongoose.models.MonthlyCategoryBudget || model("MonthlyCategoryBudget", monthlyCategoryBudgetSchema);
 export const LearningSubject = mongoose.models.LearningSubject || model("LearningSubject", learningSubjectSchema);
 export const Note = mongoose.models.Note || model("Note", noteSchema);
 export const FitnessExercise = mongoose.models.FitnessExercise || model("FitnessExercise", fitnessExerciseSchema);

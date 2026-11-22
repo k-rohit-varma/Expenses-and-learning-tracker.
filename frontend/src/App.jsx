@@ -65,6 +65,7 @@ import {
 } from "recharts";
 import { api, download, qs } from "./api.js";
 import Schedule from "./Schedule.jsx";
+import PageSizeSelect from "./PageSizeSelect.jsx";
 import "./sidebar.css";
 
 const money = (n) =>
@@ -411,18 +412,18 @@ function App() {
 function Fitness() {
   const [summary, setSummary] = useState(null), [exercises, setExercises] = useState([]), [history, setHistory] = useState({ items: [], pagination: {} }), [runs, setRuns] = useState({ items: [], pagination: {} });
   const [loading, setLoading] = useState(true), [error, setError] = useState(""), [dialog, setDialog] = useState(null);
-  const [search, setSearch] = useState(""), [query, setQuery] = useState(""), [page, setPage] = useState(1), [from, setFrom] = useState(""), [to, setTo] = useState(""), [exerciseFilter,setExerciseFilter]=useState("");
+  const [search, setSearch] = useState(""), [query, setQuery] = useState(""), [page, setPage] = useState(1), [pageSize, setPageSize] = useState("20"), [runPage, setRunPage] = useState(1), [runPageSize, setRunPageSize] = useState("20"), [from, setFrom] = useState(""), [to, setTo] = useState(""), [exerciseFilter,setExerciseFilter]=useState("");
   async function refresh() {
     setLoading(true); setError("");
     try {
       const [s, e] = await Promise.all([api("/fitness/summary"), api("/fitness/exercises")]);
       setSummary(s); setExercises(e.items);
-      const [h, r] = await Promise.all([api(`/fitness/workouts${qs({ search: query, exercise: exerciseFilter, from, to, page, limit: 10 })}`), api(`/fitness/runs${qs({ page: 1, limit: 10 })}`)]); setHistory(h); setRuns(r);
+      const [h, r] = await Promise.all([api(`/fitness/workouts${qs({ search: query, exercise: exerciseFilter, from, to, page, limit: pageSize })}`), api(`/fitness/runs${qs({ page: runPage, limit: runPageSize })}`)]); setHistory(h); setRuns(r);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }
   useEffect(() => { const id = setTimeout(() => { setQuery(search); setPage(1); }, 1500); return () => clearTimeout(id); }, [search]);
-  useEffect(() => { refresh(); }, [query, page, from, to, exerciseFilter]);
+  useEffect(() => { refresh(); }, [query, page, pageSize, runPage, runPageSize, from, to, exerciseFilter]);
   async function removeWorkout(item) {
     if (!window.confirm("Delete this workout and its exercise details?")) return;
     try { await api(`/fitness/workouts/${item._id}`, { method: "DELETE" }); setDialog(null); await refresh(); }
@@ -470,9 +471,9 @@ function Fitness() {
       <Card className="fitness-history"><div className="fitness-history-head"><div><h2>Workout history</h2><p>Browse, edit, or remove recorded sessions.</p></div><span className="fitness-history-filter"><label>From<input type="date" value={from} onChange={e => { setFrom(e.target.value); setPage(1); }}/></label><label>To<input type="date" value={to} onChange={e => { setTo(e.target.value); setPage(1); }}/></label></span></div>
         <div className="fitness-history-controls"><label className="fitness-search"><Search size={15}/><input aria-label="Search workouts" placeholder="Search workouts or exercises…" value={search} onChange={e => setSearch(e.target.value)}/></label><label className="fitness-exercise-filter">Exercise<select aria-label="Filter by exercise" value={exerciseFilter} onChange={e=>{setExerciseFilter(e.target.value);setPage(1);}}><option value="">All exercises</option>{exercises.map(x=><option key={x.id} value={x.name}>{x.name}</option>)}</select></label></div>
         {history.items.length ? <div className="fitness-history-list">{history.items.map(w => <div className="fitness-history-item" key={w._id}><div className="fitness-history-date"><strong>{niceDate(w.workoutDate)}</strong><span>{w.exercises.length} {w.exercises.length === 1 ? "exercise" : "exercises"} · {duration(w.exercises.reduce((n, x) => n + (x.durationMinutes || 0), 0))}</span></div><div className="fitness-history-exercises">{w.exercises.map(x => x.name).join(" · ")}</div><div className="row-actions"><button aria-label="Edit workout" onClick={() => setDialog({ type: "workout", item: w })}><Edit2 size={14}/></button><button aria-label="Delete workout" onClick={() => removeWorkout(w)}><Trash2 size={14}/></button></div></div>)}</div> : <div className="fitness-history-empty">No workouts match this filter.</div>}
-        <div className="pagination"><span>{history.pagination?.total || 0} workouts</span><div><button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page"><ChevronLeft size={15}/></button><span>Page {page} of {Math.max(1, history.pagination?.pages || 1)}</span><button disabled={page >= (history.pagination?.pages || 1)} onClick={() => setPage(page + 1)} aria-label="Next page"><ChevronRight size={15}/></button></div></div>
+        <div className="pagination"><span>{history.pagination?.total ? `${pageSize === "all" ? 1 : (page - 1) * Number(pageSize) + 1}–${pageSize === "all" ? history.pagination.total : Math.min(page * Number(pageSize), history.pagination.total)} of ${history.pagination.total} workouts` : "0 workouts"}</span><div><PageSizeSelect value={pageSize} onChange={(value) => { setPageSize(value); setPage(1); }} /><button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page"><ChevronLeft size={15}/></button><span>Page {page} of {Math.max(1, history.pagination?.pages || 1)}</span><button disabled={page >= (history.pagination?.pages || 1)} onClick={() => setPage(page + 1)} aria-label="Next page"><ChevronRight size={15}/></button></div></div>
       </Card>
-      <Card className="fitness-history fitness-run-history"><div className="fitness-history-head"><div><h2>Running history</h2><p>Distance, duration, and calculated pace for each session.</p></div></div>{runs.items.length ? runs.items.map(r=><div className="fitness-history-item" key={r._id}><div className="fitness-history-date"><strong>{niceDate(r.sessionDate)}</strong><span>{duration(r.durationMinutes)} · {Number(r.distanceKm).toFixed(2)} km</span></div><div className="fitness-history-exercises">Pace {Math.floor(r.paceMinutesPerKm)}:{String(Math.round((r.paceMinutesPerKm%1)*60)).padStart(2,"0")}/km · {r.speedKmh.toFixed(1)} km/h {r.notes && `· ${r.notes}`}</div><div className="row-actions"><button aria-label="Edit run" onClick={()=>setDialog({type:"run",item:r})}><Edit2 size={14}/></button><button aria-label="Delete run" onClick={()=>removeRun(r)}><Trash2 size={14}/></button></div></div>) : <div className="fitness-history-empty">No running sessions recorded yet.</div>}</Card>
+      <Card className="fitness-history fitness-run-history"><div className="fitness-history-head"><div><h2>Running history</h2><p>Distance, duration, and calculated pace for each session.</p></div></div>{runs.items.length ? runs.items.map(r=><div className="fitness-history-item" key={r._id}><div className="fitness-history-date"><strong>{niceDate(r.sessionDate)}</strong><span>{duration(r.durationMinutes)} · {Number(r.distanceKm).toFixed(2)} km</span></div><div className="fitness-history-exercises">Pace {Math.floor(r.paceMinutesPerKm)}:{String(Math.round((r.paceMinutesPerKm%1)*60)).padStart(2,"0")}/km · {r.speedKmh.toFixed(1)} km/h {r.notes && `· ${r.notes}`}</div><div className="row-actions"><button aria-label="Edit run" onClick={()=>setDialog({type:"run",item:r})}><Edit2 size={14}/></button><button aria-label="Delete run" onClick={()=>removeRun(r)}><Trash2 size={14}/></button></div></div>) : <div className="fitness-history-empty">No running sessions recorded yet.</div>}<div className="pagination"><span>{runs.pagination?.total ? `${runPageSize === "all" ? 1 : (runPage - 1) * Number(runPageSize) + 1}–${runPageSize === "all" ? runs.pagination.total : Math.min(runPage * Number(runPageSize), runs.pagination.total)} of ${runs.pagination.total} runs` : "0 runs"}</span><div><PageSizeSelect value={runPageSize} onChange={(value) => { setRunPageSize(value); setRunPage(1); }} /><button disabled={runPage <= 1} onClick={() => setRunPage(runPage - 1)} aria-label="Previous run page"><ChevronLeft size={15}/></button><span>Page {runPage} of {Math.max(1, runs.pagination?.pages || 1)}</span><button disabled={runPage >= (runs.pagination?.pages || 1)} onClick={() => setRunPage(runPage + 1)} aria-label="Next run page"><ChevronRight size={15}/></button></div></div></Card>
     </>}
     {dialog?.type === "workout" && <FitnessWorkoutDialog item={dialog.item} exercises={exercises} onClose={() => setDialog(null)} onSaved={refresh}/>}
     {dialog?.type === "run" && <FitnessRunDialog item={dialog.item} onClose={() => setDialog(null)} onSaved={refresh}/>}
@@ -751,6 +752,8 @@ function Dashboard({ settings, onNavigate, onToast }) {
   const daily = data?.trend || [];
   const total = data?.month?.spent || 0;
   const budget = data?.budget?.amount || 0;
+  const hiddenOverviewCategories = new Set((data?.hiddenOverviewCategories || (data?.monthlyCategoryBudget?.categoryBudgets || []).filter((item) => item.showInOverview === false).map((item) => item.category)).map((category) => category.toLocaleLowerCase()));
+  const overviewExpenseCategories = (data?.categories || []).filter((item) => !hiddenOverviewCategories.has(item.name.toLocaleLowerCase()));
   const pct = budget ? Math.min((total / budget) * 100, 100) : 0;
   return (
     <>
@@ -835,6 +838,7 @@ function Dashboard({ settings, onNavigate, onToast }) {
         onCurrentWeek={() => setSelectedWeek(monday(today))}
         onManage={() => onNavigate("/budget", { state: { weekStart: selectedWeek } })}
       />
+      {settings?.showMonthlyCategoryBudgetsInOverview && data?.monthlyCategoryBudget && <MonthlyOverviewWidget report={data.monthlyCategoryBudget} onViewAll={() => onNavigate("/budget")} />}
       <div className="dashboard-grid">
         <Card className="spending-card">
           <SectionHead
@@ -954,13 +958,13 @@ function Dashboard({ settings, onNavigate, onToast }) {
               </button>
             }
           />
-          {data?.categories?.length ? (
+          {overviewExpenseCategories.length ? (
             <>
               <div className="donut-wrap">
                 <ResponsiveContainer width="100%" height={185}>
                   <PieChart>
                     <Pie
-                      data={data.categories}
+                      data={overviewExpenseCategories}
                       dataKey="value"
                       nameKey="name"
                       innerRadius={56}
@@ -968,7 +972,7 @@ function Dashboard({ settings, onNavigate, onToast }) {
                       paddingAngle={3}
                       stroke="none"
                     >
-                      {data.categories.map((x, i) => (
+                    {overviewExpenseCategories.map((x, i) => (
                         <Cell key={x.name} fill={palette[i % palette.length]} />
                       ))}
                     </Pie>
@@ -989,7 +993,7 @@ function Dashboard({ settings, onNavigate, onToast }) {
                 </div>
               </div>
               <div className="legend-list">
-                {data.categories.slice(0, 4).map((x, i) => (
+                {overviewExpenseCategories.slice(0, 4).map((x, i) => (
                   <div className="legend-item" key={x.name}>
                     <i style={{ background: palette[i % palette.length] }} />
                     <span>{x.name}</span>
@@ -1001,8 +1005,9 @@ function Dashboard({ settings, onNavigate, onToast }) {
           ) : (
             <Empty
               icon={ChartNoAxesCombined}
-              title="Your categories will show here"
-              description="Log an expense to see where your money goes."
+              title={data?.categories?.length ? "Category cards hidden" : "Your categories will show here"}
+              description={data?.categories?.length ? "All expense categories are hidden from Overview. Change their visibility in Budget." : "Log an expense to see where your money goes."}
+              action={data?.categories?.length ? <button className="text-btn" onClick={() => onNavigate("/budget")}>Manage category visibility <ChevronRight size={15} /></button> : null}
             />
           )}
         </Card>
@@ -1234,6 +1239,91 @@ function WeeklyOverview({ report, weekStart, onWeekChange, onCurrentWeek, onMana
   );
 }
 
+const categoryEmoji = (name) => ({ Food: "🍽️", Snacks: "🍿", "Snacks and beverages": "🥤", Beverages: "🥤", Entertainment: "🎬", Travel: "🚗", Shopping: "🛍️", Groceries: "🛒", "Bills and Subscriptions": "🧾", "Bills and subscriptions": "🧾", Health: "💊", "Personal Care": "🧴", "Health and personal care": "💊", Education: "📚", Other: "📦", Miscellaneous: "📦" })[name] || "🏷️";
+function monthTitle(month) { return new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${month}-15T12:00:00Z`)); }
+
+function MonthlyOverviewWidget({ report, onViewAll }) {
+  const categories = (report.categoryBudgets || []).filter((item) => item.showInOverview !== false);
+  return <Card className="monthly-overview-widget">
+    <SectionHead title="Monthly category spending" sub={`${monthTitle(report.month)} · ${money(report.spent)} spent`} action={<button className="text-btn" onClick={onViewAll}>View all <ChevronRight size={15} /></button>} />
+    <div className="monthly-overview-summary"><div><span>Monthly budget</span><strong>{money(report.monthlyBudget)}</strong></div><div><span>Spent</span><strong>{money(report.spent)}</strong></div><div><span>{report.remaining < 0 ? "Over budget" : "Remaining"}</span><strong>{money(Math.abs(report.remaining))}{report.remaining < 0 ? " over" : ""}</strong></div><div><span>Overall used</span><strong>{report.percentUsed === null ? "—" : `${Math.floor(report.percentUsed)}%`}</strong></div></div>
+    {categories.length ? <div className="monthly-overview-categories">{categories.slice(0, 4).map((item) => <div key={item.id}><span>{categoryEmoji(item.category)} {item.category}</span><b>{money(item.spent)} / {money(item.allocated)}</b><div className="progress-track"><i style={{ width: `${Math.min(100, Math.max(0, item.percentUsed))}%`, background: item.status === "Exceeded" ? "#dc686a" : item.status === "Near Limit" ? "#e6a442" : "#6481e7" }} /></div><small>{item.status} · {money(item.remaining)} remaining</small></div>)}</div> : <div className="monthly-overview-empty"><p>{report.categoryBudgets?.length ? "All category cards are hidden from Overview. You can change their visibility in Budget." : "No monthly category limits yet. Add allocations to see your category breakdown here."}</p><button className="btn secondary small-btn" onClick={onViewAll}>{report.categoryBudgets?.length ? "Manage category limits" : "Set up monthly limits"}</button></div>}
+  </Card>;
+}
+
+function MonthlyBudgetSection({ settings, onToast }) {
+  const navigate = useNavigate();
+  const [month, setMonth] = useState(() => today.slice(0, 7));
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [details, setDetails] = useState(null);
+  const [monthlyExpenseEdit, setMonthlyExpenseEdit] = useState(null);
+  const categoriesForBudget = settings?.categories?.length ? settings.categories : categories;
+  async function load() {
+    setLoading(true); setError("");
+    try { const nextReport = (await api(`/budgets/monthly${qs({ month })}`)).report; setReport(nextReport); return nextReport; }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); }, [month, settings?.monthlyBudgetPaise]);
+  async function loadDetails(item) {
+    try { const result = await api(`/budgets/monthly/categories/${item.id}/expenses`); setDetails({ item, expenses: result.items.map((expense) => ({ ...expense, _id: expense.id })) }); }
+    catch (e) { setError(e.message); }
+  }
+  async function saveAllocation(event) {
+    event.preventDefault();
+    const amount = Number(form.amount);
+    if (!Number.isFinite(amount) || amount <= 0) { setError("Enter a monthly allocation greater than zero."); return; }
+    setBusy(true); setError("");
+    try {
+      const editing = Boolean(form.id);
+      const options = { amount, description: form.description || "", showInOverview: form.showInOverview !== false, includeInOverallBudget: form.includeInOverallBudget !== false };
+      const result = await api(editing ? `/budgets/monthly/categories/${form.id}` : "/budgets/monthly/categories", { method: editing ? "PUT" : "POST", body: JSON.stringify(editing ? options : { ...options, month, category: form.category }) });
+      setReport(result.report); setForm(null); onToast(editing ? "Monthly category budget updated." : "Monthly category budget added.");
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  async function deleteAllocation(item) {
+    if (!window.confirm(`Delete the ${item.category} allocation for ${monthTitle(month)}? Expenses will remain unchanged.`)) return;
+    try { setReport((await api(`/budgets/monthly/categories/${item.id}`, { method: "DELETE" })).report); onToast("Monthly category budget deleted."); }
+    catch (e) { setError(e.message); }
+  }
+  async function copyPrevious() {
+    try { setReport((await api("/budgets/monthly/categories/copy", { method: "POST", body: JSON.stringify({ month }) })).report); onToast("Previous month’s category budgets copied."); }
+    catch (e) { setError(e.message); }
+  }
+  function shiftMonth(amount) {
+    const [year, monthNumber] = month.split("-").map(Number);
+    const next = new Date(Date.UTC(year, monthNumber - 1 + amount, 1));
+    setMonth(next.toISOString().slice(0, 7));
+  }
+  const currentMonth = today.slice(0, 7);
+  const onExpenseSaved = async () => {
+    const nextReport = await load();
+    if (details) {
+      const updatedItem = nextReport?.categoryBudgets.find((item) => item.id === details.item.id) || details.item;
+      await loadDetails(updatedItem);
+    }
+  };
+  return <section className="monthly-budget-section">
+    <div className="monthly-budget-heading"><div><span className="eyebrow">MONTHLY PLAN</span><h2>My Monthly Spending Limits</h2><p>Monthly allocations are calculated from the expenses you record.</p></div><div className="month-nav"><button className="icon-btn small" aria-label="Previous month" onClick={() => shiftMonth(-1)}><ChevronLeft size={16} /></button><strong>{monthTitle(month)}</strong><button className="icon-btn small" aria-label="Next month" onClick={() => shiftMonth(1)}><ChevronRight size={16} /></button><button className="btn secondary small-btn" onClick={() => setMonth(currentMonth)}>Current month</button></div></div>
+    {error && <div className="inline-error">{error}<button onClick={() => setError("")}>Dismiss</button></div>}
+    {loading || !report ? <div className="table-loading">Loading monthly budget…</div> : <>
+      <div className="stat-grid budget-stats monthly-budget-stats"><Stat label="Monthly budget" value={money(report.monthlyBudget)} sub="Overall amount from Settings" icon={Wallet} color="blue" /><Stat label="Allocated to categories" value={money(report.allocated)} sub={`${report.categoryBudgets.length} category limits`} icon={WalletCards} color="purple" /><Stat label="Spent this month" value={money(report.spent)} sub={`${report.expenseCount} recorded expenses`} icon={Activity} color="orange" /><Stat label="Unallocated" value={money(report.unallocated)} sub={report.allocationsOverBudget ? "Category allocations exceed your budget" : "Available to allocate"} icon={ChartNoAxesCombined} color={report.allocationsOverBudget ? "orange" : "green"} /><Stat label={report.remaining < 0 ? "Over monthly budget" : "Overall remaining"} value={money(Math.abs(report.remaining))} sub={report.remaining < 0 ? "Spent beyond the monthly budget" : "Across all expense categories"} icon={Activity} color={report.remaining < 0 ? "orange" : "green"} /></div>
+      {report.allocationsOverBudget && <div className="allocation-warning" role="status">Category allocations exceed the monthly budget by {money(Math.abs(report.unallocated))}. Adjust allocations or change your monthly budget in Settings; the overall budget was not changed.</div>}
+      <Card className="monthly-budget-card"><SectionHead title={`${monthTitle(month)} category budgets`} sub="Actual spending comes from your expense records." action={<div className="limit-actions"><button className="btn secondary" onClick={copyPrevious}>Copy previous month</button><button className="btn primary" onClick={() => setForm({ category: categoriesForBudget[0] || "", amount: "", description: "", showInOverview: true, includeInOverallBudget: true })}><Plus size={15} /> Add Category Budget</button></div>} />
+        {report.categoryBudgets.length ? <div className="limit-grid">{report.categoryBudgets.map((item) => <article className="limit-card monthly-limit-card" key={item.id}><button className="monthly-category-open" onClick={() => loadDetails(item)}><span className="limit-icon">{categoryEmoji(item.category)}</span><span><h3>{item.category}</h3><span className={`limit-status ${item.status.toLowerCase().replace(" ", "-")}`}>{item.status}</span></span></button><div className="limit-card-actions"><button className="icon-btn small" aria-label={`Edit ${item.category} monthly budget`} onClick={() => setForm({ ...item, amount: String(item.allocated) })}><Edit2 size={14} /></button><button className="icon-btn small" aria-label={`Delete ${item.category} monthly budget`} onClick={() => deleteAllocation(item)}><Trash2 size={14} /></button></div><div className="limit-amount"><span>Allocated this month</span><strong>{money(item.allocated)}</strong></div><div className="limit-metrics"><span>Spent <b>{money(item.spent)}</b></span><span>Remaining <b>{money(item.remaining)}</b></span><span>Used <b>{item.percentUsed.toFixed(1)}%</b></span></div><div className="progress-track" role="progressbar" aria-label={`${item.category} monthly budget used`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.min(100, Math.max(0, item.percentUsed))}><i style={{ width: `${Math.min(100, Math.max(0, item.percentUsed))}%`, background: item.status === "Exceeded" ? "#dc686a" : item.status === "Near Limit" ? "#e6a442" : "#6481e7" }} /></div><button className="text-btn monthly-view-expenses" onClick={() => loadDetails(item)}>View category expenses <ChevronRight size={14} /></button></article>)}</div> : <Empty title="No monthly category budgets" description="Add category allocations to see how much you can spend and what remains." action={<button className="btn primary small-btn" onClick={() => setForm({ category: categoriesForBudget[0] || "", amount: "", description: "", showInOverview: true, includeInOverallBudget: true })}><Plus size={14} /> Add Category Budget</button>} />}
+      </Card>
+    </>}
+    {form && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="monthly-budget-form-title"><div className="modal-head"><div><div className="eyebrow">{monthTitle(month)}</div><h2 id="monthly-budget-form-title">{form.id ? "Edit category budget" : "Add category budget"}</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setForm(null)}><X size={18} /></button></div><form onSubmit={saveAllocation}><div className="modal-fields">{!form.id && <label>Expense category<select required value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>{categoriesForBudget.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>}<label>Monthly allocation <span className="input-prefix"><b>₹</b><input type="number" min="0.01" step="0.01" required value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></span></label><label className="wide-field">Description <span className="optional">Optional</span><input maxLength="240" value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label><div className="monthly-allocation-toggles"><div className="allocation-toggle"><span><strong>Show in Overview</strong><small>Display this category's spending card in the main Overview dashboard.</small></span><button type="button" role="switch" aria-label="Show in Overview" aria-checked={form.showInOverview !== false} className={`preference-switch ${form.showInOverview !== false ? "enabled" : ""}`} onClick={() => setForm({ ...form, showInOverview: form.showInOverview === false })}><i /></button></div><div className="allocation-toggle"><span><strong>Include in Overall Budget</strong><small>Include this category's allocated amount when calculating the total category budget allocation.</small></span><button type="button" role="switch" aria-label="Include in Overall Budget" aria-checked={form.includeInOverallBudget !== false} className={`preference-switch ${form.includeInOverallBudget !== false ? "enabled" : ""}`} onClick={() => setForm({ ...form, includeInOverallBudget: form.includeInOverallBudget === false })}><i /></button></div></div></div>{error && <div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={() => setForm(null)}>Cancel</button><button className="btn primary" disabled={busy}>{busy ? "Saving…" : "Save allocation"}</button></div></form></div></div>}
+    {details && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="monthly-category-details-title"><div className="modal-head"><div><div className="eyebrow">{monthTitle(month)}</div><h2 id="monthly-category-details-title">{details.item.category} expenses</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setDetails(null)}><X size={18} /></button></div><p className="monthly-details-total">Total spent: <strong>{money(details.item.spent)}</strong></p>{details.expenses.length ? <div className="category-expense-list">{details.expenses.map((expense) => <div key={expense._id}><div><b>{expense.description}</b><span>{niceDate(expense.transactionDate)} · {expense.paymentMethod}</span></div><strong>{money(expense.amount)}</strong><button className="icon-btn small" aria-label={`Edit ${expense.description}`} onClick={() => setMonthlyExpenseEdit(expense)}><Edit2 size={14} /></button></div>)}</div> : <Empty title="No expenses this month" description="Recorded expenses in this category will appear here." />}<div className="modal-actions"><button className="btn secondary" onClick={() => navigate("/expenses")}>Open Expenses</button><button className="btn primary" onClick={() => setDetails(null)}>Done</button></div></div></div>}
+    {monthlyExpenseEdit && <RecordModal type="expense" initial={monthlyExpenseEdit} settings={settings} onToast={onToast} onClose={() => setMonthlyExpenseEdit(null)} onSaved={onExpenseSaved} />}
+  </section>;
+}
+
 function BudgetPage({ onToast, settings }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -1302,6 +1392,7 @@ function BudgetPage({ onToast, settings }) {
   const end = addDays(weekStart, 6);
   const budgetSet = report?.budget !== null && report?.budget !== undefined;
   return <>
+    <MonthlyBudgetSection settings={settings} onToast={onToast} />
     <PageTitle eyebrow="SPEND WITH INTENTION" title="Weekly budget" description="Set a limit for each week and see where your spending goes." action={<button className="btn secondary" onClick={() => setWeekStart(currentWeek)}>Current week</button>} />
     <div className="budget-week-controls">
       <button className="btn secondary" onClick={() => setWeekStart((week) => addDays(week, -7))}><ChevronLeft size={16} /> Previous week</button>
@@ -1703,6 +1794,7 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
   const exp = type === "expense",
     [items, setItems] = useState([]),
     [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 }),
+    [pageSize, setPageSize] = useState("20"),
     [summary, setSummary] = useState({ totalAmount: 0, count: 0, averageAmount: 0, largestAmount: 0 }),
     [filters, setFilters] = useState({
       search: "",
@@ -1728,7 +1820,7 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
     setLoading(true);
     setError("");
     try {
-      const f = { ...filters, page, limit: 20 };
+      const f = { ...filters, page, limit: pageSize };
       if (exp) {
         delete f.subjectId;
       } else {
@@ -1750,7 +1842,7 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
   }
   useEffect(() => {
     load(1);
-  }, [type, filters, fixedSubjectId]);
+  }, [type, filters, fixedSubjectId, pageSize]);
   async function remove() {
     try {
       await api(`/${endpoint}/${confirm._id}`, { method: "DELETE" });
@@ -1945,10 +2037,11 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
         <div className="pagination">
           <span>
             {pagination.total
-              ? `${(pagination.page - 1) * 20 + 1}–${Math.min(pagination.page * 20, pagination.total)} of ${pagination.total} records`
+              ? `${pageSize === "all" ? 1 : (pagination.page - 1) * Number(pageSize) + 1}–${pageSize === "all" ? pagination.total : Math.min(pagination.page * Number(pageSize), pagination.total)} of ${pagination.total} records`
               : "0 records"}
           </span>
           <div>
+            <PageSizeSelect value={pageSize} onChange={(value) => { setPageSize(value); }} />
             <button
               disabled={pagination.page <= 1}
               onClick={() => load(pagination.page - 1)}
@@ -2132,15 +2225,15 @@ function LearningSubjectPage({ onToast, settings }) {
 }
 
 function SubjectNotes({ subject, onToast }) {
-  const [items, setItems] = useState([]), [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 5 }), [loading, setLoading] = useState(true), [error, setError] = useState(""), [search, setSearch] = useState(""), [filter, setFilter] = useState("all"), [draft, setDraft] = useState(null), [saving, setSaving] = useState(false), [deleting, setDeleting] = useState(null), [viewing, setViewing] = useState(null), [page, setPage] = useState(1);
+  const [items, setItems] = useState([]), [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 20 }), [pageSize, setPageSize] = useState("20"), [loading, setLoading] = useState(true), [error, setError] = useState(""), [search, setSearch] = useState(""), [filter, setFilter] = useState("all"), [draft, setDraft] = useState(null), [saving, setSaving] = useState(false), [deleting, setDeleting] = useState(null), [viewing, setViewing] = useState(null), [page, setPage] = useState(1);
   const storageKey = `lifeledger-note-draft:${subject._id}`;
   const load = async () => {
     setLoading(true);
-    try { const params = new URLSearchParams({ page: String(page), limit: "5", search, pinned: String(filter === "pinned") }); const result = await api(`/learning/subjects/${subject._id}/notes?${params}`); setItems(result.items); setPagination(result.pagination); setError(""); }
+    try { const params = new URLSearchParams({ page: String(page), limit: pageSize, search, pinned: String(filter === "pinned") }); const result = await api(`/learning/subjects/${subject._id}/notes?${params}`); setItems(result.items); setPagination(result.pagination); setError(""); }
     catch (e) { setError(e.message); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [subject._id, page, search, filter]);
+  useEffect(() => { load(); }, [subject._id, page, pageSize, search, filter]);
   useEffect(() => {
     if (!draft) return;
     localStorage.setItem(storageKey, JSON.stringify({ title: draft.title, content: draft.content, pinned: draft.pinned, noteId: draft._id || null }));
@@ -2165,6 +2258,7 @@ function SubjectNotes({ subject, onToast }) {
     try { const saved = JSON.parse(localStorage.getItem(storageKey)); setDraft(saved ? { ...saved, _id: saved.noteId || undefined } : { title: "", content: "", pinned: false }); }
     catch { setDraft({ title: "", content: "", pinned: false }); }
   };
+  const changePageSize = (value) => { setPageSize(value); setPage(1); };
   const pageCount = pagination.pages;
   const currentPage = pagination.page;
   const pageItems = items;
@@ -2183,7 +2277,7 @@ function SubjectNotes({ subject, onToast }) {
   }
   return <section className="notes-section">
     <div className="notes-toolbar"><div><h2>Subject notes</h2><p>Ideas saved separately from your study sessions.</p></div><button type="button" className="btn primary" onClick={startNew}><Plus size={15} /> New note</button></div>
-    <div className="notes-filters"><label className="notes-search"><Search size={15} /><input aria-label="Search notes" placeholder="Search notes" value={search} onChange={(e) => changeSearch(e.target.value)} /></label><label className="notes-filter-label">Show<select aria-label="Filter notes" className="notes-filter" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}><option value="all">All notes</option><option value="pinned">Pinned only</option></select></label></div>
+    <div className="notes-filters"><label className="notes-search"><Search size={15} /><input aria-label="Search notes" placeholder="Search notes" value={search} onChange={(e) => changeSearch(e.target.value)} /></label><label className="notes-filter-label">Show<select aria-label="Filter notes" className="notes-filter" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}><option value="all">All notes</option><option value="pinned">Pinned only</option></select></label><PageSizeSelect value={pageSize} onChange={changePageSize} /></div>
     {error && <div className="inline-error">{error}<button type="button" onClick={load}>Retry</button></div>}
     {draft && <div className="card note-editor"><label>Title <span className="optional">Optional</span><input maxLength="160" placeholder="A title for this note" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label><label>Note<textarea autoFocus rows="9" maxLength="20000" required placeholder="Jot down your ideas…" value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} /></label><div className="note-editor-foot"><span>{saving ? "Saving…" : draft._id ? "Autosaved" : "Draft saved on this device"}</span><button type="button" className="btn ghost" onClick={() => { setDraft(null); localStorage.removeItem(storageKey); }}>Done</button></div></div>}
     {loading ? <div className="table-loading">Loading notes…</div> : items.length ? <><div className="notes-grid">{pageItems.map((note) => <article className="card note-card" key={note._id}><div className="note-card-head"><strong>{note.title || "Untitled note"}</strong><button type="button" className={`icon-btn small ${note.pinned ? "note-pinned" : ""}`} aria-label={note.pinned ? "Unpin note" : "Pin note"} title={note.pinned ? "Unpin note" : "Pin note"} onClick={() => togglePin(note)}><Pin size={14} /></button><button type="button" className="icon-btn small" aria-label="Edit note" onClick={() => setDraft(note)}><Edit2 size={14} /></button><button type="button" className="icon-btn small" aria-label="Delete note" onClick={() => setDeleting(note)}><Trash2 size={14} /></button></div><p className="note-preview">{note.content}</p><div className="note-card-actions"><button type="button" className="text-btn" onClick={() => setViewing(note)}>View note <ChevronRight size={14} /></button></div><div className="note-timestamps"><span>Created {new Date(note.createdAt).toLocaleString()}</span><span>Updated {new Date(note.updatedAt).toLocaleString()}</span></div></article>)}</div>{pageCount > 1 && <nav className="notes-pagination" aria-label="Notes pages"><span>{(currentPage - 1) * pagination.limit + 1}–{Math.min(currentPage * pagination.limit, pagination.total)} of {pagination.total}</span><div><button type="button" className="btn ghost" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage} of {pageCount}</span><button type="button" className="btn ghost" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></div></nav>}</> : !draft && <div className="card notes-empty"><FileText size={23} /><h3>{search ? "No matching notes" : "Jot down your first idea"}</h3><p>{search ? "Try another search." : "Keep thoughts, questions, and ideas here, separate from your sessions."}</p>{!search && <button type="button" className="btn secondary" onClick={startNew}>Write a note</button>}</div>}
@@ -2714,6 +2808,7 @@ function Viewers({ onToast }) {
   const [items, setItems] = useState([]),
     [admin, setAdmin] = useState(null),
     [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 }),
+    [pageSize, setPageSize] = useState("20"),
     [search, setSearch] = useState(""),
     [status, setStatus] = useState("pending_approval"),
     [loading, setLoading] = useState(true),
@@ -2724,14 +2819,14 @@ function Viewers({ onToast }) {
     setLoading(true);
     setError("");
     try {
-      const result = await api(`/users${qs({ page, limit: 20, search, status })}`);
+      const result = await api(`/users${qs({ page, limit: pageSize, search, status })}`);
       setItems(result.items);
       setAdmin(result.admin || null);
       setPagination(result.pagination);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }
-  useEffect(() => { load(1); }, [search, status]);
+  useEffect(() => { load(1); }, [search, status, pageSize]);
   async function setUserStatus() {
     if (!pending || actionBusy) return;
     const { account, action } = pending;
@@ -2772,7 +2867,7 @@ function Viewers({ onToast }) {
           <td><div className="user-actions">{account.status === "pending_approval" ? <><button className="btn primary small-btn" onClick={() => setPending({ account, action: "approve" })}>Approve</button><button className="btn block-btn small-btn" onClick={() => setPending({ account, action: "reject" })}>Reject</button></> : account.status === "active" ? <button className="btn block-btn small-btn" onClick={() => setPending({ account, action: "block" })}>Block access</button> : account.status === "blocked" ? <button className="btn secondary small-btn" onClick={() => unblock(account)}>Unblock</button> : <span className="muted">No actions</span>}</div></td>
         </tr>)}</tbody></table></div>
       ) : <Empty icon={Users} title={search ? "No matching users" : status === "pending_approval" ? "No pending registrations" : status === "all" ? "No users yet" : `No ${status.replaceAll("_", " ")} users`} description={search ? "Try a different username search." : status === "pending_approval" ? "New registrations that need your review will appear here." : "Try another status filter."} />}
-      <div className="pagination"><span>{pagination.total ? `${(pagination.page - 1) * 20 + 1}–${Math.min(pagination.page * 20, pagination.total)} of ${pagination.total} users` : "0 users"}</span><div><button disabled={pagination.page <= 1} onClick={() => load(pagination.page - 1)} aria-label="Previous page"><ChevronLeft size={16}/></button><span>Page {pagination.page} of {Math.max(1, pagination.pages)}</span><button disabled={pagination.page >= pagination.pages} onClick={() => load(pagination.page + 1)} aria-label="Next page"><ChevronRight size={16}/></button></div></div>
+      <div className="pagination"><span>{pagination.total ? `${pageSize === "all" ? 1 : (pagination.page - 1) * Number(pageSize) + 1}–${pageSize === "all" ? pagination.total : Math.min(pagination.page * Number(pageSize), pagination.total)} of ${pagination.total} users` : "0 users"}</span><div><PageSizeSelect value={pageSize} onChange={setPageSize} /><button disabled={pagination.page <= 1} onClick={() => load(pagination.page - 1)} aria-label="Previous page"><ChevronLeft size={16}/></button><span>Page {pagination.page} of {Math.max(1, pagination.pages)}</span><button disabled={pagination.page >= pagination.pages} onClick={() => load(pagination.page + 1)} aria-label="Next page"><ChevronRight size={16}/></button></div></div>
     </Card>
     {pending && <ConfirmDialog busy={actionBusy} title={({ approve: "Approve this account?", reject: "Reject this registration?", block: "Block this account?" })[pending.action]} confirmLabel={({ approve: "Approve", reject: "Reject account", block: "Block access" })[pending.action]} text={({ approve: `${pending.account.username} will be able to sign in and use their own private workspace.`, reject: `${pending.account.username} will not be able to sign in. Their account record will be retained.`, block: `${pending.account.username} will lose access to LifeLedger immediately. Their records will be preserved.` })[pending.action]} onClose={() => setPending(null)} onConfirm={setUserStatus}/>}
   </>;
@@ -2793,6 +2888,7 @@ function Settings({ settings, onSettings, onToast }) {
         theme: settings.theme || "light",
         categories: settings.categories || categories,
         timezone: settings.timezone || "Asia/Kolkata",
+        showMonthlyCategoryBudgetsInOverview: settings.showMonthlyCategoryBudgetsInOverview || false,
       });
   }, [settings]);
   if (!form) return <div className="table-loading">Loading settings…</div>;
@@ -2880,6 +2976,14 @@ function Settings({ settings, onSettings, onToast }) {
               <span className="field-help">
                 A gentle nudge appears when you reach 80% of your budget.
               </span>
+            </div>
+          </Card>
+          <Card className="settings-section">
+            <div className="settings-section-icon purple"><ChartNoAxesCombined size={18} /></div>
+            <div className="settings-section-body">
+              <h2>Overview Preferences</h2>
+              <p>Choose which monthly category budget details appear on your main Overview dashboard.</p>
+              <div className="overview-preference-row"><div><strong>Show category-wise spending in Overview</strong><span>Display your monthly category-wise spending limits, actual spending and remaining amounts on your main Overview dashboard.</span></div><button type="button" role="switch" aria-checked={Boolean(form.showMonthlyCategoryBudgetsInOverview)} aria-label="Show category-wise spending in Overview" className={`preference-switch ${form.showMonthlyCategoryBudgetsInOverview ? "enabled" : ""}`} onClick={() => update("showMonthlyCategoryBudgetsInOverview", !form.showMonthlyCategoryBudgetsInOverview)}><i /></button></div>
             </div>
           </Card>
           <Card className="settings-section">
