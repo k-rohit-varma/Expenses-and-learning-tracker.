@@ -75,6 +75,8 @@ const userSchema = new Schema(
           "Health and personal care",
           "Bills and subscriptions",
           "Miscellaneous",
+          "Emergancy Savings",
+          "Home"
         ],
       },
     },

@@ -165,7 +165,14 @@ const categories = [
   "Health and personal care",
   "Bills and subscriptions",
   "Miscellaneous",
+  "Emergancy Savings",
+  "Home",
 ];
+const expenseCategories = (saved = []) =>
+  [...categories, ...(Array.isArray(saved) ? saved : [])].filter(
+    (category, index, all) =>
+      all.findIndex((item) => item.toLocaleLowerCase() === category.toLocaleLowerCase()) === index,
+  );
 const palette = [
   "#5176e8",
   "#8b6de0",
@@ -175,6 +182,8 @@ const palette = [
   "#63a9ce",
   "#c280b5",
   "#d7bd53",
+  "#19e2ce",
+  "#a2a25a",
 ];
 
 function App() {
@@ -211,14 +220,22 @@ function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("lifeledger-theme", theme);
   }, [theme]);
-  useEffect(() => { if (settings?.theme) setTheme(settings.theme); }, [settings?.theme]);
+  useEffect(() => {
+    if (settings?.theme) setTheme(settings.theme);
+  }, [settings?.theme]);
   const toggleTheme = async () => {
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
-    setSettings(current => current ? { ...current, theme: next } : current);
+    setSettings((current) => (current ? { ...current, theme: next } : current));
     if (user) {
-      try { await api("/settings", { method: "PATCH", body: JSON.stringify({ theme: next }) }); }
-      catch (e) { setToast(`Theme saved on this device only: ${e.message}`); }
+      try {
+        await api("/settings", {
+          method: "PATCH",
+          body: JSON.stringify({ theme: next }),
+        });
+      } catch (e) {
+        setToast(`Theme saved on this device only: ${e.message}`);
+      }
     }
   };
   const logout = async () => {
@@ -244,11 +261,14 @@ function App() {
           setUser(u);
           setSettings(u.settings);
           setTheme(u.settings?.theme || theme);
-          setToast(u.role === "owner" ? "Welcome back." : "Your account is ready.");
+          setToast(
+            u.role === "owner" ? "Welcome back." : "Your account is ready.",
+          );
         }}
       />
     );
-  const visibleNav = user.role === "owner" ? [...nav, ["/users", "Viewers", Users]] : nav;
+  const visibleNav =
+    user.role === "owner" ? [...nav, ["/users", "Viewers", Users]] : nav;
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobile ? "show" : ""}`}>
@@ -289,8 +309,18 @@ function App() {
             >
               <Icon size={18} />
               <span>{label}</span>
-              {to === "/expenses" && <span className="nav-dot nav-dot-expense" aria-label="Expenses color" />}
-              {to === "/learning" && <span className="nav-dot nav-dot-learning" aria-label="Learning color" />}
+              {to === "/expenses" && (
+                <span
+                  className="nav-dot nav-dot-expense"
+                  aria-label="Expenses color"
+                />
+              )}
+              {to === "/learning" && (
+                <span
+                  className="nav-dot nav-dot-learning"
+                  aria-label="Learning color"
+                />
+              )}
             </NavLink>
           ))}
         </nav>
@@ -325,11 +355,12 @@ function App() {
           <div className="breadcrumb">
             My workspace <ChevronRight size={14} />{" "}
             <strong>
-              {visibleNav.find((x) => x[0] === location.pathname)?.[1] || "Overview"}
+              {visibleNav.find((x) => x[0] === location.pathname)?.[1] ||
+                "Overview"}
             </strong>
           </div>
           <div className="top-actions">
-            <ThemeToggle theme={theme} onToggle={toggleTheme}/>
+            <ThemeToggle theme={theme} onToggle={toggleTheme} />
             <span className="today-label">
               {new Intl.DateTimeFormat("en-IN", {
                 weekday: "short",
@@ -360,17 +391,22 @@ function App() {
               path="/expenses"
               element={<Expenses onToast={setToast} settings={settings} />}
             />
-            <Route path="/budget" element={<BudgetPage onToast={setToast} settings={settings} />} />
+            <Route
+              path="/budget"
+              element={<BudgetPage onToast={setToast} settings={settings} />}
+            />
             <Route
               path="/learning/subjects/:subjectId"
-              element={<LearningSubjectPage onToast={setToast} settings={settings} />}
+              element={
+                <LearningSubjectPage onToast={setToast} settings={settings} />
+              }
             />
-            <Route
-              path="/learning"
-              element={<Learning onToast={setToast} />}
-            />
+            <Route path="/learning" element={<Learning onToast={setToast} />} />
             <Route path="/fitness" element={<Fitness />} />
-            <Route path="/schedule" element={<Schedule onToast={setToast} settings={settings} />} />
+            <Route
+              path="/schedule"
+              element={<Schedule onToast={setToast} settings={settings} />}
+            />
             <Route path="/calendar" element={<Calendar onToast={setToast} />} />
             <Route path="/reports" element={<Reports />} />
             <Route
@@ -383,7 +419,16 @@ function App() {
                 />
               }
             />
-            <Route path="/users" element={user.role === "owner" ? <Viewers onToast={setToast} /> : <Navigate replace to="/" />} />
+            <Route
+              path="/users"
+              element={
+                user.role === "owner" ? (
+                  <Viewers onToast={setToast} />
+                ) : (
+                  <Navigate replace to="/" />
+                )
+              }
+            />
             <Route
               path="*"
               element={
@@ -410,107 +455,1392 @@ function App() {
 }
 
 function Fitness() {
-  const [summary, setSummary] = useState(null), [exercises, setExercises] = useState([]), [history, setHistory] = useState({ items: [], pagination: {} }), [runs, setRuns] = useState({ items: [], pagination: {} });
-  const [loading, setLoading] = useState(true), [error, setError] = useState(""), [dialog, setDialog] = useState(null);
-  const [search, setSearch] = useState(""), [query, setQuery] = useState(""), [page, setPage] = useState(1), [pageSize, setPageSize] = useState("20"), [runPage, setRunPage] = useState(1), [runPageSize, setRunPageSize] = useState("20"), [from, setFrom] = useState(""), [to, setTo] = useState(""), [exerciseFilter,setExerciseFilter]=useState("");
+  const [summary, setSummary] = useState(null),
+    [exercises, setExercises] = useState([]),
+    [history, setHistory] = useState({ items: [], pagination: {} }),
+    [runs, setRuns] = useState({ items: [], pagination: {} });
+  const [loading, setLoading] = useState(true),
+    [error, setError] = useState(""),
+    [dialog, setDialog] = useState(null);
+  const [search, setSearch] = useState(""),
+    [query, setQuery] = useState(""),
+    [page, setPage] = useState(1),
+    [pageSize, setPageSize] = useState("20"),
+    [runPage, setRunPage] = useState(1),
+    [runPageSize, setRunPageSize] = useState("20"),
+    [from, setFrom] = useState(""),
+    [to, setTo] = useState(""),
+    [exerciseFilter, setExerciseFilter] = useState("");
   async function refresh() {
-    setLoading(true); setError("");
+    setLoading(true);
+    setError("");
     try {
-      const [s, e] = await Promise.all([api("/fitness/summary"), api("/fitness/exercises")]);
-      setSummary(s); setExercises(e.items);
-      const [h, r] = await Promise.all([api(`/fitness/workouts${qs({ search: query, exercise: exerciseFilter, from, to, page, limit: pageSize })}`), api(`/fitness/runs${qs({ page: runPage, limit: runPageSize })}`)]); setHistory(h); setRuns(r);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+      const [s, e] = await Promise.all([
+        api("/fitness/summary"),
+        api("/fitness/exercises"),
+      ]);
+      setSummary(s);
+      setExercises(e.items);
+      const [h, r] = await Promise.all([
+        api(
+          `/fitness/workouts${qs({ search: query, exercise: exerciseFilter, from, to, page, limit: pageSize })}`,
+        ),
+        api(`/fitness/runs${qs({ page: runPage, limit: runPageSize })}`),
+      ]);
+      setHistory(h);
+      setRuns(r);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { const id = setTimeout(() => { setQuery(search); setPage(1); }, 1500); return () => clearTimeout(id); }, [search]);
-  useEffect(() => { refresh(); }, [query, page, pageSize, runPage, runPageSize, from, to, exerciseFilter]);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setQuery(search);
+      setPage(1);
+    }, 1500);
+    return () => clearTimeout(id);
+  }, [search]);
+  useEffect(() => {
+    refresh();
+  }, [query, page, pageSize, runPage, runPageSize, from, to, exerciseFilter]);
   async function removeWorkout(item) {
-    if (!window.confirm("Delete this workout and its exercise details?")) return;
-    try { await api(`/fitness/workouts/${item._id}`, { method: "DELETE" }); setDialog(null); await refresh(); }
-    catch (e) { setError(e.message); }
+    if (!window.confirm("Delete this workout and its exercise details?"))
+      return;
+    try {
+      await api(`/fitness/workouts/${item._id}`, { method: "DELETE" });
+      setDialog(null);
+      await refresh();
+    } catch (e) {
+      setError(e.message);
+    }
   }
   async function removeRun(item) {
     if (!window.confirm("Delete this running session?")) return;
-    try { await api(`/fitness/runs/${item._id}`, { method: "DELETE" }); await refresh(); }
-    catch (e) { setError(e.message); }
+    try {
+      await api(`/fitness/runs/${item._id}`, { method: "DELETE" });
+      await refresh();
+    } catch (e) {
+      setError(e.message);
+    }
   }
   async function removeExercise(item) {
-    if (!window.confirm(`Delete ${item.name} from your custom exercise library? Existing workout history will keep its saved exercise details.`)) return;
-    try { await api(`/fitness/exercises/${item.id}`, { method: "DELETE" }); await refresh(); }
-    catch (e) { setError(e.message); }
+    if (
+      !window.confirm(
+        `Delete ${item.name} from your custom exercise library? Existing workout history will keep its saved exercise details.`,
+      )
+    )
+      return;
+    try {
+      await api(`/fitness/exercises/${item.id}`, { method: "DELETE" });
+      await refresh();
+    } catch (e) {
+      setError(e.message);
+    }
   }
   const pace = summary?.averagePaceMinutesPerKm;
-  return <>
-    <PageTitle eyebrow="YOUR WELLBEING" title="Fitness" description="Track your workouts, running, and activity progress." action={<div className="fitness-actions"><button className="btn secondary" onClick={() => setDialog({ type: "run" })}><Activity size={15} /> Add Run</button><button className="btn primary" onClick={() => setDialog({ type: "workout" })}><Plus size={16} /> Add Workout</button></div>} />
-    {error && <div className="inline-error">{error}<button onClick={() => setError("")}>Dismiss</button></div>}
-    {loading && !summary ? <div className="table-loading">Loading fitness records…</div> : summary && <>
-      <div className="stat-grid fitness-stats">
-        <Stat label="Total workouts" value={summary.totals.workouts} sub="Completed sessions" icon={Dumbbell} color="blue" />
-        <Stat label="Running distance" value={`${summary.totals.runningDistanceKm.toFixed(1)} km`} sub={`${summary.week.distanceKm.toFixed(1)} km this week`} icon={Activity} color="purple" />
-        <Stat label="Workout duration" value={duration(summary.totals.durationMinutes)} sub="Recorded exercise time" icon={Clock3} color="green" />
-        <Stat label="Active days" value={summary.totals.activeDays} sub={`${summary.totals.streak} day current streak`} icon={CalendarDays} color="orange" />
-      </div>
-      <div className="dashboard-grid fitness-dashboard-grid">
-        <Card className="fitness-panel"><SectionHead title="Today's activity" sub={niceDate(`${today}T12:00:00`)} />
-          <div className="fitness-today"><div><strong>{duration(summary.today.durationMinutes)}</strong><span>Exercise time</span></div><div><strong>{summary.today.exerciseCount}</strong><span>Exercises</span></div><div><strong>{summary.today.runningDistanceKm.toFixed(1)} km</strong><span>Running · {duration(summary.today.runningMinutes)}</span></div></div>
-          {!summary.today.workoutCount && !summary.today.runningMinutes && <p className="fitness-hint">No activity recorded today. Your next session will show up here.</p>}
-        </Card>
-        <Card className="fitness-panel"><SectionHead title="This week" sub="Monday through today" />
-          <div className="fitness-week-stats"><div><span>Workouts</span><strong>{summary.week.workouts}</strong></div><div><span>Running</span><strong>{summary.week.distanceKm.toFixed(1)} km</strong></div><div><span>Time</span><strong>{duration(summary.week.durationMinutes)}</strong></div><div><span>Streak</span><strong>{summary.totals.streak} days</strong></div></div>
-        </Card>
-      </div>
-      <div className="dashboard-grid fitness-charts">
-        <Card className="fitness-panel"><SectionHead title="Weekly activity" sub="Sessions and exercise minutes" />{summary.weekly.some(x => x.workouts || x.runs) ? <ResponsiveContainer width="100%" height={220}><BarChart data={summary.weekly}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5"/><XAxis dataKey="date" tickFormatter={x => new Intl.DateTimeFormat("en-IN", { weekday: "short", timeZone: "UTC" }).format(new Date(`${x}T12:00:00Z`))} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }}/><YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }}/><Tooltip labelFormatter={x => niceDate(`${x}T12:00:00`)} /><Bar dataKey="workouts" name="Workouts" fill="#6984e8" radius={[4,4,0,0]}/><Bar dataKey="runs" name="Runs" fill="#49a28a" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer> : <div className="fitness-chart-empty">No activity recorded this week yet.</div>}</Card>
-        <Card className="fitness-panel"><SectionHead title="Monthly running" sub="Distance over the last six months" />{summary.monthly.some(x => x.distanceKm) ? <ResponsiveContainer width="100%" height={220}><AreaChart data={summary.monthly}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5"/><XAxis dataKey="month" tickFormatter={x => new Intl.DateTimeFormat("en-IN", { month: "short", timeZone: "UTC" }).format(new Date(`${x}-15T12:00:00Z`))} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }}/><YAxis unit=" km" tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: "var(--muted)" }}/><Tooltip formatter={x => [`${Number(x).toFixed(1)} km`, "Distance"]}/><Area type="monotone" dataKey="distanceKm" stroke="#6682e5" fill="#6682e526"/></AreaChart></ResponsiveContainer> : <div className="fitness-chart-empty">Your running distance trend will appear after your first run.</div>}</Card>
-      </div>
-      <div className="dashboard-grid fitness-lower">
-        <Card className="fitness-panel"><SectionHead title="Running progress" sub="Your all-time running summary" />{summary.totals.runningDistanceKm ? <div className="fitness-run-summary"><div><strong>{summary.totals.runningDistanceKm.toFixed(1)} km</strong><span>Total distance</span></div><div><strong>{summary.month.runningDistanceKm.toFixed(1)} km</strong><span>This month</span></div><div><strong>{pace ? `${Math.floor(pace)}:${String(Math.round((pace % 1) * 60)).padStart(2, "0")} /km` : "—"}</strong><span>Average pace</span></div></div> : <div className="fitness-chart-empty">Log a run to start your running progress.</div>}</Card>
-        <Card className="fitness-panel"><SectionHead title="Exercise categories" sub="Exercises completed" />{summary.categories.length ? <div className="fitness-category-list">{summary.categories.map((x, i) => <div key={x.name}><span><i style={{ background: palette[i % palette.length] }}/>{x.name}</span><strong>{x.value}</strong></div>)}</div> : <div className="fitness-chart-empty">Category activity will appear here after a workout.</div>}</Card>
-      </div>
-      <Card className="fitness-library"><div className="fitness-history-head"><div><h2>Custom exercise library</h2><p>Your reusable exercises stay available in future workouts.</p></div><button className="btn secondary small-btn" onClick={() => setDialog({ type: "exercise" })}><Plus size={14}/> Add custom exercise</button></div>{exercises.filter(x=>x.custom).length ? <div className="fitness-library-list">{exercises.filter(x=>x.custom).map(x=><div key={x.id}><span><strong>{x.name}</strong><small>{x.category} · {x.type}</small></span><button className="icon-btn small" aria-label={`Edit ${x.name}`} onClick={()=>setDialog({type:"exercise",item:x})}><Edit2 size={14}/></button><button className="icon-btn small" aria-label={`Delete ${x.name}`} onClick={()=>removeExercise(x)}><Trash2 size={14}/></button></div>)}</div> : <div className="fitness-library-empty">No custom exercises yet. Add one here or choose “Other” while creating a workout.</div>}</Card>
-      <Card className="fitness-history"><div className="fitness-history-head"><div><h2>Workout history</h2><p>Browse, edit, or remove recorded sessions.</p></div><span className="fitness-history-filter"><label>From<input type="date" value={from} onChange={e => { setFrom(e.target.value); setPage(1); }}/></label><label>To<input type="date" value={to} onChange={e => { setTo(e.target.value); setPage(1); }}/></label></span></div>
-        <div className="fitness-history-controls"><label className="fitness-search"><Search size={15}/><input aria-label="Search workouts" placeholder="Search workouts or exercises…" value={search} onChange={e => setSearch(e.target.value)}/></label><label className="fitness-exercise-filter">Exercise<select aria-label="Filter by exercise" value={exerciseFilter} onChange={e=>{setExerciseFilter(e.target.value);setPage(1);}}><option value="">All exercises</option>{exercises.map(x=><option key={x.id} value={x.name}>{x.name}</option>)}</select></label></div>
-        {history.items.length ? <div className="fitness-history-list">{history.items.map(w => <div className="fitness-history-item" key={w._id}><div className="fitness-history-date"><strong>{niceDate(w.workoutDate)}</strong><span>{w.exercises.length} {w.exercises.length === 1 ? "exercise" : "exercises"} · {duration(w.exercises.reduce((n, x) => n + (x.durationMinutes || 0), 0))}</span></div><div className="fitness-history-exercises">{w.exercises.map(x => x.name).join(" · ")}</div><div className="row-actions"><button aria-label="Edit workout" onClick={() => setDialog({ type: "workout", item: w })}><Edit2 size={14}/></button><button aria-label="Delete workout" onClick={() => removeWorkout(w)}><Trash2 size={14}/></button></div></div>)}</div> : <div className="fitness-history-empty">No workouts match this filter.</div>}
-        <div className="pagination"><span>{history.pagination?.total ? `${pageSize === "all" ? 1 : (page - 1) * Number(pageSize) + 1}–${pageSize === "all" ? history.pagination.total : Math.min(page * Number(pageSize), history.pagination.total)} of ${history.pagination.total} workouts` : "0 workouts"}</span><div><PageSizeSelect value={pageSize} onChange={(value) => { setPageSize(value); setPage(1); }} /><button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page"><ChevronLeft size={15}/></button><span>Page {page} of {Math.max(1, history.pagination?.pages || 1)}</span><button disabled={page >= (history.pagination?.pages || 1)} onClick={() => setPage(page + 1)} aria-label="Next page"><ChevronRight size={15}/></button></div></div>
-      </Card>
-      <Card className="fitness-history fitness-run-history"><div className="fitness-history-head"><div><h2>Running history</h2><p>Distance, duration, and calculated pace for each session.</p></div></div>{runs.items.length ? runs.items.map(r=><div className="fitness-history-item" key={r._id}><div className="fitness-history-date"><strong>{niceDate(r.sessionDate)}</strong><span>{duration(r.durationMinutes)} · {Number(r.distanceKm).toFixed(2)} km</span></div><div className="fitness-history-exercises">Pace {Math.floor(r.paceMinutesPerKm)}:{String(Math.round((r.paceMinutesPerKm%1)*60)).padStart(2,"0")}/km · {r.speedKmh.toFixed(1)} km/h {r.notes && `· ${r.notes}`}</div><div className="row-actions"><button aria-label="Edit run" onClick={()=>setDialog({type:"run",item:r})}><Edit2 size={14}/></button><button aria-label="Delete run" onClick={()=>removeRun(r)}><Trash2 size={14}/></button></div></div>) : <div className="fitness-history-empty">No running sessions recorded yet.</div>}<div className="pagination"><span>{runs.pagination?.total ? `${runPageSize === "all" ? 1 : (runPage - 1) * Number(runPageSize) + 1}–${runPageSize === "all" ? runs.pagination.total : Math.min(runPage * Number(runPageSize), runs.pagination.total)} of ${runs.pagination.total} runs` : "0 runs"}</span><div><PageSizeSelect value={runPageSize} onChange={(value) => { setRunPageSize(value); setRunPage(1); }} /><button disabled={runPage <= 1} onClick={() => setRunPage(runPage - 1)} aria-label="Previous run page"><ChevronLeft size={15}/></button><span>Page {runPage} of {Math.max(1, runs.pagination?.pages || 1)}</span><button disabled={runPage >= (runs.pagination?.pages || 1)} onClick={() => setRunPage(runPage + 1)} aria-label="Next run page"><ChevronRight size={15}/></button></div></div></Card>
-    </>}
-    {dialog?.type === "workout" && <FitnessWorkoutDialog item={dialog.item} exercises={exercises} onClose={() => setDialog(null)} onSaved={refresh}/>}
-    {dialog?.type === "run" && <FitnessRunDialog item={dialog.item} onClose={() => setDialog(null)} onSaved={refresh}/>}
-    {dialog?.type === "exercise" && <FitnessExerciseDialog item={dialog.item} onClose={() => setDialog(null)} onSaved={refresh}/>}
-  </>;
+  return (
+    <>
+      <PageTitle
+        eyebrow="YOUR WELLBEING"
+        title="Fitness"
+        description="Track your workouts, running, and activity progress."
+        action={
+          <div className="fitness-actions">
+            <button
+              className="btn secondary"
+              onClick={() => setDialog({ type: "run" })}
+            >
+              <Activity size={15} /> Add Run
+            </button>
+            <button
+              className="btn primary"
+              onClick={() => setDialog({ type: "workout" })}
+            >
+              <Plus size={16} /> Add Workout
+            </button>
+          </div>
+        }
+      />
+      {error && (
+        <div className="inline-error">
+          {error}
+          <button onClick={() => setError("")}>Dismiss</button>
+        </div>
+      )}
+      {loading && !summary ? (
+        <div className="table-loading">Loading fitness records…</div>
+      ) : (
+        summary && (
+          <>
+            <div className="stat-grid fitness-stats">
+              <Stat
+                label="Total workouts"
+                value={summary.totals.workouts}
+                sub="Completed sessions"
+                icon={Dumbbell}
+                color="blue"
+              />
+              <Stat
+                label="Running distance"
+                value={`${summary.totals.runningDistanceKm.toFixed(1)} km`}
+                sub={`${summary.week.distanceKm.toFixed(1)} km this week`}
+                icon={Activity}
+                color="purple"
+              />
+              <Stat
+                label="Workout duration"
+                value={duration(summary.totals.durationMinutes)}
+                sub="Recorded exercise time"
+                icon={Clock3}
+                color="green"
+              />
+              <Stat
+                label="Active days"
+                value={summary.totals.activeDays}
+                sub={`${summary.totals.streak} day current streak`}
+                icon={CalendarDays}
+                color="orange"
+              />
+            </div>
+            <div className="dashboard-grid fitness-dashboard-grid">
+              <Card className="fitness-panel">
+                <SectionHead
+                  title="Today's activity"
+                  sub={niceDate(`${today}T12:00:00`)}
+                />
+                <div className="fitness-today">
+                  <div>
+                    <strong>{duration(summary.today.durationMinutes)}</strong>
+                    <span>Exercise time</span>
+                  </div>
+                  <div>
+                    <strong>{summary.today.exerciseCount}</strong>
+                    <span>Exercises</span>
+                  </div>
+                  <div>
+                    <strong>
+                      {summary.today.runningDistanceKm.toFixed(1)} km
+                    </strong>
+                    <span>
+                      Running · {duration(summary.today.runningMinutes)}
+                    </span>
+                  </div>
+                </div>
+                {!summary.today.workoutCount &&
+                  !summary.today.runningMinutes && (
+                    <p className="fitness-hint">
+                      No activity recorded today. Your next session will show up
+                      here.
+                    </p>
+                  )}
+              </Card>
+              <Card className="fitness-panel">
+                <SectionHead title="This week" sub="Monday through today" />
+                <div className="fitness-week-stats">
+                  <div>
+                    <span>Workouts</span>
+                    <strong>{summary.week.workouts}</strong>
+                  </div>
+                  <div>
+                    <span>Running</span>
+                    <strong>{summary.week.distanceKm.toFixed(1)} km</strong>
+                  </div>
+                  <div>
+                    <span>Time</span>
+                    <strong>{duration(summary.week.durationMinutes)}</strong>
+                  </div>
+                  <div>
+                    <span>Streak</span>
+                    <strong>{summary.totals.streak} days</strong>
+                  </div>
+                </div>
+              </Card>
+            </div>
+            <div className="dashboard-grid fitness-charts">
+              <Card className="fitness-panel">
+                <SectionHead
+                  title="Weekly activity"
+                  sub="Sessions and exercise minutes"
+                />
+                {summary.weekly.some((x) => x.workouts || x.runs) ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={summary.weekly}>
+                      <CartesianGrid
+                        vertical={false}
+                        stroke="var(--line)"
+                        strokeDasharray="3 5"
+                      />
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={(x) =>
+                          new Intl.DateTimeFormat("en-IN", {
+                            weekday: "short",
+                            timeZone: "UTC",
+                          }).format(new Date(`${x}T12:00:00Z`))
+                        }
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 10, fill: "var(--muted)" }}
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 10, fill: "var(--muted)" }}
+                      />
+                      <Tooltip
+                        labelFormatter={(x) => niceDate(`${x}T12:00:00`)}
+                      />
+                      <Bar
+                        dataKey="workouts"
+                        name="Workouts"
+                        fill="#6984e8"
+                        radius={[4, 4, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="runs"
+                        name="Runs"
+                        fill="#49a28a"
+                        radius={[4, 4, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="fitness-chart-empty">
+                    No activity recorded this week yet.
+                  </div>
+                )}
+              </Card>
+              <Card className="fitness-panel">
+                <SectionHead
+                  title="Monthly running"
+                  sub="Distance over the last six months"
+                />
+                {summary.monthly.some((x) => x.distanceKm) ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={summary.monthly}>
+                      <CartesianGrid
+                        vertical={false}
+                        stroke="var(--line)"
+                        strokeDasharray="3 5"
+                      />
+                      <XAxis
+                        dataKey="month"
+                        tickFormatter={(x) =>
+                          new Intl.DateTimeFormat("en-IN", {
+                            month: "short",
+                            timeZone: "UTC",
+                          }).format(new Date(`${x}-15T12:00:00Z`))
+                        }
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 10, fill: "var(--muted)" }}
+                      />
+                      <YAxis
+                        unit=" km"
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 9, fill: "var(--muted)" }}
+                      />
+                      <Tooltip
+                        formatter={(x) => [
+                          `${Number(x).toFixed(1)} km`,
+                          "Distance",
+                        ]}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="distanceKm"
+                        stroke="#6682e5"
+                        fill="#6682e526"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="fitness-chart-empty">
+                    Your running distance trend will appear after your first
+                    run.
+                  </div>
+                )}
+              </Card>
+            </div>
+            <div className="dashboard-grid fitness-lower">
+              <Card className="fitness-panel">
+                <SectionHead
+                  title="Running progress"
+                  sub="Your all-time running summary"
+                />
+                {summary.totals.runningDistanceKm ? (
+                  <div className="fitness-run-summary">
+                    <div>
+                      <strong>
+                        {summary.totals.runningDistanceKm.toFixed(1)} km
+                      </strong>
+                      <span>Total distance</span>
+                    </div>
+                    <div>
+                      <strong>
+                        {summary.month.runningDistanceKm.toFixed(1)} km
+                      </strong>
+                      <span>This month</span>
+                    </div>
+                    <div>
+                      <strong>
+                        {pace
+                          ? `${Math.floor(pace)}:${String(Math.round((pace % 1) * 60)).padStart(2, "0")} /km`
+                          : "—"}
+                      </strong>
+                      <span>Average pace</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="fitness-chart-empty">
+                    Log a run to start your running progress.
+                  </div>
+                )}
+              </Card>
+              <Card className="fitness-panel">
+                <SectionHead
+                  title="Exercise categories"
+                  sub="Exercises completed"
+                />
+                {summary.categories.length ? (
+                  <div className="fitness-category-list">
+                    {summary.categories.map((x, i) => (
+                      <div key={x.name}>
+                        <span>
+                          <i
+                            style={{ background: palette[i % palette.length] }}
+                          />
+                          {x.name}
+                        </span>
+                        <strong>{x.value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="fitness-chart-empty">
+                    Category activity will appear here after a workout.
+                  </div>
+                )}
+              </Card>
+            </div>
+            <Card className="fitness-library">
+              <div className="fitness-history-head">
+                <div>
+                  <h2>Custom exercise library</h2>
+                  <p>
+                    Your reusable exercises stay available in future workouts.
+                  </p>
+                </div>
+                <button
+                  className="btn secondary small-btn"
+                  onClick={() => setDialog({ type: "exercise" })}
+                >
+                  <Plus size={14} /> Add custom exercise
+                </button>
+              </div>
+              {exercises.filter((x) => x.custom).length ? (
+                <div className="fitness-library-list">
+                  {exercises
+                    .filter((x) => x.custom)
+                    .map((x) => (
+                      <div key={x.id}>
+                        <span>
+                          <strong>{x.name}</strong>
+                          <small>
+                            {x.category} · {x.type}
+                          </small>
+                        </span>
+                        <button
+                          className="icon-btn small"
+                          aria-label={`Edit ${x.name}`}
+                          onClick={() =>
+                            setDialog({ type: "exercise", item: x })
+                          }
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          className="icon-btn small"
+                          aria-label={`Delete ${x.name}`}
+                          onClick={() => removeExercise(x)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <div className="fitness-library-empty">
+                  No custom exercises yet. Add one here or choose “Other” while
+                  creating a workout.
+                </div>
+              )}
+            </Card>
+            <Card className="fitness-history">
+              <div className="fitness-history-head">
+                <div>
+                  <h2>Workout history</h2>
+                  <p>Browse, edit, or remove recorded sessions.</p>
+                </div>
+                <span className="fitness-history-filter">
+                  <label>
+                    From
+                    <input
+                      type="date"
+                      value={from}
+                      onChange={(e) => {
+                        setFrom(e.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </label>
+                  <label>
+                    To
+                    <input
+                      type="date"
+                      value={to}
+                      onChange={(e) => {
+                        setTo(e.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </label>
+                </span>
+              </div>
+              <div className="fitness-history-controls">
+                <label className="fitness-search">
+                  <Search size={15} />
+                  <input
+                    aria-label="Search workouts"
+                    placeholder="Search workouts or exercises…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </label>
+                <label className="fitness-exercise-filter">
+                  Exercise
+                  <select
+                    aria-label="Filter by exercise"
+                    value={exerciseFilter}
+                    onChange={(e) => {
+                      setExerciseFilter(e.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">All exercises</option>
+                    {exercises.map((x) => (
+                      <option key={x.id} value={x.name}>
+                        {x.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {history.items.length ? (
+                <div className="fitness-history-list">
+                  {history.items.map((w) => (
+                    <div className="fitness-history-item" key={w._id}>
+                      <div className="fitness-history-date">
+                        <strong>{niceDate(w.workoutDate)}</strong>
+                        <span>
+                          {w.exercises.length}{" "}
+                          {w.exercises.length === 1 ? "exercise" : "exercises"}{" "}
+                          ·{" "}
+                          {duration(
+                            w.exercises.reduce(
+                              (n, x) => n + (x.durationMinutes || 0),
+                              0,
+                            ),
+                          )}
+                        </span>
+                      </div>
+                      <div className="fitness-history-exercises">
+                        {w.exercises.map((x) => x.name).join(" · ")}
+                      </div>
+                      <div className="row-actions">
+                        <button
+                          aria-label="Edit workout"
+                          onClick={() =>
+                            setDialog({ type: "workout", item: w })
+                          }
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          aria-label="Delete workout"
+                          onClick={() => removeWorkout(w)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="fitness-history-empty">
+                  No workouts match this filter.
+                </div>
+              )}
+              <div className="pagination">
+                <span>
+                  {history.pagination?.total
+                    ? `${pageSize === "all" ? 1 : (page - 1) * Number(pageSize) + 1}–${pageSize === "all" ? history.pagination.total : Math.min(page * Number(pageSize), history.pagination.total)} of ${history.pagination.total} workouts`
+                    : "0 workouts"}
+                </span>
+                <div>
+                  <PageSizeSelect
+                    value={pageSize}
+                    onChange={(value) => {
+                      setPageSize(value);
+                      setPage(1);
+                    }}
+                  />
+                  <button
+                    disabled={page <= 1}
+                    onClick={() => setPage(page - 1)}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft size={15} />
+                  </button>
+                  <span>
+                    Page {page} of {Math.max(1, history.pagination?.pages || 1)}
+                  </span>
+                  <button
+                    disabled={page >= (history.pagination?.pages || 1)}
+                    onClick={() => setPage(page + 1)}
+                    aria-label="Next page"
+                  >
+                    <ChevronRight size={15} />
+                  </button>
+                </div>
+              </div>
+            </Card>
+            <Card className="fitness-history fitness-run-history">
+              <div className="fitness-history-head">
+                <div>
+                  <h2>Running history</h2>
+                  <p>
+                    Distance, duration, and calculated pace for each session.
+                  </p>
+                </div>
+              </div>
+              {runs.items.length ? (
+                runs.items.map((r) => (
+                  <div className="fitness-history-item" key={r._id}>
+                    <div className="fitness-history-date">
+                      <strong>{niceDate(r.sessionDate)}</strong>
+                      <span>
+                        {duration(r.durationMinutes)} ·{" "}
+                        {Number(r.distanceKm).toFixed(2)} km
+                      </span>
+                    </div>
+                    <div className="fitness-history-exercises">
+                      Pace {Math.floor(r.paceMinutesPerKm)}:
+                      {String(
+                        Math.round((r.paceMinutesPerKm % 1) * 60),
+                      ).padStart(2, "0")}
+                      /km · {r.speedKmh.toFixed(1)} km/h{" "}
+                      {r.notes && `· ${r.notes}`}
+                    </div>
+                    <div className="row-actions">
+                      <button
+                        aria-label="Edit run"
+                        onClick={() => setDialog({ type: "run", item: r })}
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        aria-label="Delete run"
+                        onClick={() => removeRun(r)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="fitness-history-empty">
+                  No running sessions recorded yet.
+                </div>
+              )}
+              <div className="pagination">
+                <span>
+                  {runs.pagination?.total
+                    ? `${runPageSize === "all" ? 1 : (runPage - 1) * Number(runPageSize) + 1}–${runPageSize === "all" ? runs.pagination.total : Math.min(runPage * Number(runPageSize), runs.pagination.total)} of ${runs.pagination.total} runs`
+                    : "0 runs"}
+                </span>
+                <div>
+                  <PageSizeSelect
+                    value={runPageSize}
+                    onChange={(value) => {
+                      setRunPageSize(value);
+                      setRunPage(1);
+                    }}
+                  />
+                  <button
+                    disabled={runPage <= 1}
+                    onClick={() => setRunPage(runPage - 1)}
+                    aria-label="Previous run page"
+                  >
+                    <ChevronLeft size={15} />
+                  </button>
+                  <span>
+                    Page {runPage} of {Math.max(1, runs.pagination?.pages || 1)}
+                  </span>
+                  <button
+                    disabled={runPage >= (runs.pagination?.pages || 1)}
+                    onClick={() => setRunPage(runPage + 1)}
+                    aria-label="Next run page"
+                  >
+                    <ChevronRight size={15} />
+                  </button>
+                </div>
+              </div>
+            </Card>
+          </>
+        )
+      )}
+      {dialog?.type === "workout" && (
+        <FitnessWorkoutDialog
+          item={dialog.item}
+          exercises={exercises}
+          onClose={() => setDialog(null)}
+          onSaved={refresh}
+        />
+      )}
+      {dialog?.type === "run" && (
+        <FitnessRunDialog
+          item={dialog.item}
+          onClose={() => setDialog(null)}
+          onSaved={refresh}
+        />
+      )}
+      {dialog?.type === "exercise" && (
+        <FitnessExerciseDialog
+          item={dialog.item}
+          onClose={() => setDialog(null)}
+          onSaved={refresh}
+        />
+      )}
+    </>
+  );
 }
 
 function FitnessExerciseDialog({ item, onClose, onSaved }) {
-  const [form,setForm]=useState({name:item?.name||"",category:item?.category||"Cardio",type:item?.type||"cardio",description:item?.description||""}),[busy,setBusy]=useState(false),[error,setError]=useState("");
-  async function submit(e){e.preventDefault();setBusy(true);setError("");try{await api(`/fitness/exercises${item?.id?`/${item.id}`:""}`,{method:item?.id?"PATCH":"POST",body:JSON.stringify(form)});await onSaved();onClose();}catch(e){setError(e.message);}finally{setBusy(false);}}
-  return <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="fitness-custom-title"><div className="modal-head"><div><div className="eyebrow">EXERCISE LIBRARY</div><h2 id="fitness-custom-title">{item?"Edit custom exercise":"Add custom exercise"}</h2></div><button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18}/></button></div><form onSubmit={submit}><div className="modal-fields"><label>Name<input required maxLength="80" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label>Category<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{["Cardio","Chest","Back","Shoulders","Arms","Legs","Core / Abs"].map(x=><option key={x}>{x}</option>)}</select></label><label>Exercise type<select value={form.type} onChange={e=>setForm({...form,type:e.target.value})}>{[["strength","Strength"],["cardio","Cardio"],["duration","Duration-based"],["repetition","Repetition-based"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label><label className="wide-field">Description <span className="optional">Optional</span><textarea rows="2" maxLength="500" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label></div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}>{busy?"Saving…":"Save exercise"}</button></div></form></div></div>;
+  const [form, setForm] = useState({
+      name: item?.name || "",
+      category: item?.category || "Cardio",
+      type: item?.type || "cardio",
+      description: item?.description || "",
+    }),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/fitness/exercises${item?.id ? `/${item.id}` : ""}`, {
+        method: item?.id ? "PATCH" : "POST",
+        body: JSON.stringify(form),
+      });
+      await onSaved();
+      onClose();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fitness-custom-title"
+      >
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">EXERCISE LIBRARY</div>
+            <h2 id="fitness-custom-title">
+              {item ? "Edit custom exercise" : "Add custom exercise"}
+            </h2>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-fields">
+            <label>
+              Name
+              <input
+                required
+                maxLength="80"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </label>
+            <label>
+              Category
+              <select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              >
+                {[
+                  "Cardio",
+                  "Chest",
+                  "Back",
+                  "Shoulders",
+                  "Arms",
+                  "Legs",
+                  "Core / Abs",
+                ].map((x) => (
+                  <option key={x}>{x}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Exercise type
+              <select
+                value={form.type}
+                onChange={(e) => setForm({ ...form, type: e.target.value })}
+              >
+                {[
+                  ["strength", "Strength"],
+                  ["cardio", "Cardio"],
+                  ["duration", "Duration-based"],
+                  ["repetition", "Repetition-based"],
+                ].map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="wide-field">
+              Description <span className="optional">Optional</span>
+              <textarea
+                rows="2"
+                maxLength="500"
+                value={form.description}
+                onChange={(e) =>
+                  setForm({ ...form, description: e.target.value })
+                }
+              />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-actions">
+            <button type="button" className="btn ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn primary" disabled={busy}>
+              {busy ? "Saving…" : "Save exercise"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function FitnessWorkoutDialog({ item, exercises, onClose, onSaved }) {
-  const [date, setDate] = useState(item ? inputDateTime(item.workoutDate) : `${today}T12:00`), [notes, setNotes] = useState(item?.notes || ""), [rows, setRows] = useState(item?.exercises || []), [busy, setBusy] = useState(false), [error, setError] = useState(""), [custom, setCustom] = useState(false), [newExercise, setNewExercise] = useState({ name: "", category: "Cardio", type: "cardio", description: "" });
-  const options = [...exercises.filter(x => !x.custom || !item?.exercises?.some(e => e.exerciseId === x.id)), { id: "other", name: "Other – Add Custom Exercise", category: "", type: "", custom: false }];
-  const add = (id) => { if (id === "other") { setCustom(true); return; } const e = exercises.find(x => x.id === id); if (e) setRows(prev => [...prev, { exerciseId: e.custom ? e.id : null, name: e.name, category: e.category, type: e.type, sets: "", reps: "", weightKg: "", durationMinutes: "", distanceKm: "", notes: "" }]); };
-  async function createCustom(ev) { ev.preventDefault(); setError(""); try { const { item: saved } = await api("/fitness/exercises", { method: "POST", body: JSON.stringify(newExercise) }); exercises.push({ id: String(saved._id), name: saved.name, category: saved.category, type: saved.type, custom: true }); setRows(prev => [...prev, { exerciseId: String(saved._id), name: saved.name, category: saved.category, type: saved.type, notes: "" }]); setCustom(false); } catch (e) { setError(e.message); } }
-  async function submit(ev) { ev.preventDefault(); setBusy(true); setError(""); const clean = rows.map(x => ({ exerciseId: x.exerciseId || null, name: x.name, category: x.category, type: x.type, sets: x.sets === "" ? null : Number(x.sets), reps: x.reps === "" ? null : Number(x.reps), weightKg: x.weightKg === "" ? null : Number(x.weightKg), durationMinutes: x.durationMinutes === "" ? null : Number(x.durationMinutes), distanceKm: x.distanceKm === "" ? null : Number(x.distanceKm), notes: x.notes || "" })); try { await api(`/fitness/workouts${item ? `/${item._id}` : ""}`, { method: item ? "PATCH" : "POST", body: JSON.stringify({ workoutDate: indiaIso(date), notes, exercises: clean }) }); await onSaved(); onClose(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
-  return <div className="modal-backdrop"><div className="modal fitness-modal" role="dialog" aria-modal="true" aria-labelledby="fitness-workout-title"><div className="modal-head"><div><div className="eyebrow">FITNESS LOG</div><h2 id="fitness-workout-title">{item ? "Edit workout" : "Add workout"}</h2></div><button className="icon-btn" aria-label="Close" onClick={onClose}><X size={18}/></button></div><form onSubmit={submit}><div className="modal-fields"><label>Date and time<input type="datetime-local" required value={date} onChange={e => setDate(e.target.value)}/></label><label className="wide-field">Add exercise<select value="" onChange={e => add(e.target.value)}><option value="" disabled>Select an exercise</option>{options.map((x,i) => <option key={x.id || i} value={x.id}>{x.custom ? `${x.name} · Custom` : x.name}</option>)}</select></label></div>
-    {rows.map((x, i) => <div className="fitness-exercise-form" key={`${x.exerciseId || x.name}-${i}`}><div className="fitness-exercise-form-head"><strong>{x.name}</strong><button type="button" className="icon-btn small" aria-label={`Remove ${x.name}`} onClick={() => setRows(rows.filter((_,j) => j !== i))}><Trash2 size={14}/></button></div><div className="fitness-exercise-fields">{x.type === "strength" && <><label>Sets<input type="number" min="1" value={x.sets ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,sets:e.target.value}:r))}/></label><label>Reps / set<input type="number" min="1" value={x.reps ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,reps:e.target.value}:r))}/></label><label>Weight kg<input type="number" min="0" step="0.1" value={x.weightKg ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,weightKg:e.target.value}:r))}/></label></>}{["cardio","duration"].includes(x.type) && <label>Duration minutes<input type="number" min="1" value={x.durationMinutes ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,durationMinutes:e.target.value}:r))}/></label>}{x.type === "cardio" && <label>Distance km <span className="optional">Optional</span><input type="number" min="0" step="0.01" value={x.distanceKm ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,distanceKm:e.target.value}:r))}/></label>}{x.type === "repetition" && <label>Repetitions<input type="number" min="1" value={x.reps ?? ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,reps:e.target.value}:r))}/></label>}<label className="wide-field">Notes <span className="optional">Optional</span><input value={x.notes || ""} onChange={e => setRows(rows.map((r,j) => j===i?{...r,notes:e.target.value}:r))}/></label></div></div>)}
-    <label className="fitness-overall-notes">Workout notes <span className="optional">Optional</span><textarea rows="2" maxLength="2000" value={notes} onChange={e => setNotes(e.target.value)}/></label>
-    {error && <div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button disabled={busy || !rows.length} className="btn primary">{busy ? "Saving…" : "Save workout"}</button></div></form>
-    {custom && <div className="modal-backdrop fitness-nested"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="fitness-custom-title"><div className="modal-head"><div><div className="eyebrow">EXERCISE LIBRARY</div><h2 id="fitness-custom-title">Add custom exercise</h2></div><button className="icon-btn" onClick={() => setCustom(false)} aria-label="Close"><X size={18}/></button></div><form onSubmit={createCustom}><div className="modal-fields"><label>Name<input required maxLength="80" value={newExercise.name} onChange={e => setNewExercise({...newExercise,name:e.target.value})}/></label><label>Category<select value={newExercise.category} onChange={e => setNewExercise({...newExercise,category:e.target.value})}>{["Cardio","Chest","Back","Shoulders","Arms","Legs","Core / Abs"].map(x=><option key={x}>{x}</option>)}</select></label><label>Exercise type<select value={newExercise.type} onChange={e => setNewExercise({...newExercise,type:e.target.value})}>{[["strength","Strength"],["cardio","Cardio"],["duration","Duration-based"],["repetition","Repetition-based"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label><label className="wide-field">Description <span className="optional">Optional</span><textarea rows="2" maxLength="500" value={newExercise.description} onChange={e=>setNewExercise({...newExercise,description:e.target.value})}/></label></div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={()=>setCustom(false)}>Cancel</button><button className="btn primary">Save exercise</button></div></form></div></div>}
-  </div></div>;
+  const [date, setDate] = useState(
+      item ? inputDateTime(item.workoutDate) : `${today}T12:00`,
+    ),
+    [notes, setNotes] = useState(item?.notes || ""),
+    [rows, setRows] = useState(item?.exercises || []),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [custom, setCustom] = useState(false),
+    [newExercise, setNewExercise] = useState({
+      name: "",
+      category: "Cardio",
+      type: "cardio",
+      description: "",
+    });
+  const options = [
+    ...exercises.filter(
+      (x) => !x.custom || !item?.exercises?.some((e) => e.exerciseId === x.id),
+    ),
+    {
+      id: "other",
+      name: "Other – Add Custom Exercise",
+      category: "",
+      type: "",
+      custom: false,
+    },
+  ];
+  const add = (id) => {
+    if (id === "other") {
+      setCustom(true);
+      return;
+    }
+    const e = exercises.find((x) => x.id === id);
+    if (e)
+      setRows((prev) => [
+        ...prev,
+        {
+          exerciseId: e.custom ? e.id : null,
+          name: e.name,
+          category: e.category,
+          type: e.type,
+          sets: "",
+          reps: "",
+          weightKg: "",
+          durationMinutes: "",
+          distanceKm: "",
+          notes: "",
+        },
+      ]);
+  };
+  async function createCustom(ev) {
+    ev.preventDefault();
+    setError("");
+    try {
+      const { item: saved } = await api("/fitness/exercises", {
+        method: "POST",
+        body: JSON.stringify(newExercise),
+      });
+      exercises.push({
+        id: String(saved._id),
+        name: saved.name,
+        category: saved.category,
+        type: saved.type,
+        custom: true,
+      });
+      setRows((prev) => [
+        ...prev,
+        {
+          exerciseId: String(saved._id),
+          name: saved.name,
+          category: saved.category,
+          type: saved.type,
+          notes: "",
+        },
+      ]);
+      setCustom(false);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function submit(ev) {
+    ev.preventDefault();
+    setBusy(true);
+    setError("");
+    const clean = rows.map((x) => ({
+      exerciseId: x.exerciseId || null,
+      name: x.name,
+      category: x.category,
+      type: x.type,
+      sets: x.sets === "" ? null : Number(x.sets),
+      reps: x.reps === "" ? null : Number(x.reps),
+      weightKg: x.weightKg === "" ? null : Number(x.weightKg),
+      durationMinutes:
+        x.durationMinutes === "" ? null : Number(x.durationMinutes),
+      distanceKm: x.distanceKm === "" ? null : Number(x.distanceKm),
+      notes: x.notes || "",
+    }));
+    try {
+      await api(`/fitness/workouts${item ? `/${item._id}` : ""}`, {
+        method: item ? "PATCH" : "POST",
+        body: JSON.stringify({
+          workoutDate: indiaIso(date),
+          notes,
+          exercises: clean,
+        }),
+      });
+      await onSaved();
+      onClose();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop">
+      <div
+        className="modal fitness-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fitness-workout-title"
+      >
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">FITNESS LOG</div>
+            <h2 id="fitness-workout-title">
+              {item ? "Edit workout" : "Add workout"}
+            </h2>
+          </div>
+          <button className="icon-btn" aria-label="Close" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-fields">
+            <label>
+              Date and time
+              <input
+                type="datetime-local"
+                required
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </label>
+            <label className="wide-field">
+              Add exercise
+              <select value="" onChange={(e) => add(e.target.value)}>
+                <option value="" disabled>
+                  Select an exercise
+                </option>
+                {options.map((x, i) => (
+                  <option key={x.id || i} value={x.id}>
+                    {x.custom ? `${x.name} · Custom` : x.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {rows.map((x, i) => (
+            <div
+              className="fitness-exercise-form"
+              key={`${x.exerciseId || x.name}-${i}`}
+            >
+              <div className="fitness-exercise-form-head">
+                <strong>{x.name}</strong>
+                <button
+                  type="button"
+                  className="icon-btn small"
+                  aria-label={`Remove ${x.name}`}
+                  onClick={() => setRows(rows.filter((_, j) => j !== i))}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <div className="fitness-exercise-fields">
+                {x.type === "strength" && (
+                  <>
+                    <label>
+                      Sets
+                      <input
+                        type="number"
+                        min="1"
+                        value={x.sets ?? ""}
+                        onChange={(e) =>
+                          setRows(
+                            rows.map((r, j) =>
+                              j === i ? { ...r, sets: e.target.value } : r,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Reps / set
+                      <input
+                        type="number"
+                        min="1"
+                        value={x.reps ?? ""}
+                        onChange={(e) =>
+                          setRows(
+                            rows.map((r, j) =>
+                              j === i ? { ...r, reps: e.target.value } : r,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Weight kg
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={x.weightKg ?? ""}
+                        onChange={(e) =>
+                          setRows(
+                            rows.map((r, j) =>
+                              j === i ? { ...r, weightKg: e.target.value } : r,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                  </>
+                )}
+                {["cardio", "duration"].includes(x.type) && (
+                  <label>
+                    Duration minutes
+                    <input
+                      type="number"
+                      min="1"
+                      value={x.durationMinutes ?? ""}
+                      onChange={(e) =>
+                        setRows(
+                          rows.map((r, j) =>
+                            j === i
+                              ? { ...r, durationMinutes: e.target.value }
+                              : r,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                )}
+                {x.type === "cardio" && (
+                  <label>
+                    Distance km <span className="optional">Optional</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={x.distanceKm ?? ""}
+                      onChange={(e) =>
+                        setRows(
+                          rows.map((r, j) =>
+                            j === i ? { ...r, distanceKm: e.target.value } : r,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                )}
+                {x.type === "repetition" && (
+                  <label>
+                    Repetitions
+                    <input
+                      type="number"
+                      min="1"
+                      value={x.reps ?? ""}
+                      onChange={(e) =>
+                        setRows(
+                          rows.map((r, j) =>
+                            j === i ? { ...r, reps: e.target.value } : r,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                )}
+                <label className="wide-field">
+                  Notes <span className="optional">Optional</span>
+                  <input
+                    value={x.notes || ""}
+                    onChange={(e) =>
+                      setRows(
+                        rows.map((r, j) =>
+                          j === i ? { ...r, notes: e.target.value } : r,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+              </div>
+            </div>
+          ))}
+          <label className="fitness-overall-notes">
+            Workout notes <span className="optional">Optional</span>
+            <textarea
+              rows="2"
+              maxLength="2000"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </label>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-actions">
+            <button type="button" className="btn ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button disabled={busy || !rows.length} className="btn primary">
+              {busy ? "Saving…" : "Save workout"}
+            </button>
+          </div>
+        </form>
+        {custom && (
+          <div className="modal-backdrop fitness-nested">
+            <div
+              className="modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="fitness-custom-title"
+            >
+              <div className="modal-head">
+                <div>
+                  <div className="eyebrow">EXERCISE LIBRARY</div>
+                  <h2 id="fitness-custom-title">Add custom exercise</h2>
+                </div>
+                <button
+                  className="icon-btn"
+                  onClick={() => setCustom(false)}
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <form onSubmit={createCustom}>
+                <div className="modal-fields">
+                  <label>
+                    Name
+                    <input
+                      required
+                      maxLength="80"
+                      value={newExercise.name}
+                      onChange={(e) =>
+                        setNewExercise({ ...newExercise, name: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Category
+                    <select
+                      value={newExercise.category}
+                      onChange={(e) =>
+                        setNewExercise({
+                          ...newExercise,
+                          category: e.target.value,
+                        })
+                      }
+                    >
+                      {[
+                        "Cardio",
+                        "Chest",
+                        "Back",
+                        "Shoulders",
+                        "Arms",
+                        "Legs",
+                        "Core / Abs",
+                      ].map((x) => (
+                        <option key={x}>{x}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Exercise type
+                    <select
+                      value={newExercise.type}
+                      onChange={(e) =>
+                        setNewExercise({ ...newExercise, type: e.target.value })
+                      }
+                    >
+                      {[
+                        ["strength", "Strength"],
+                        ["cardio", "Cardio"],
+                        ["duration", "Duration-based"],
+                        ["repetition", "Repetition-based"],
+                      ].map(([v, l]) => (
+                        <option key={v} value={v}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="wide-field">
+                    Description <span className="optional">Optional</span>
+                    <textarea
+                      rows="2"
+                      maxLength="500"
+                      value={newExercise.description}
+                      onChange={(e) =>
+                        setNewExercise({
+                          ...newExercise,
+                          description: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                {error && <div className="form-error">{error}</div>}
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => setCustom(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button className="btn primary">Save exercise</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function FitnessRunDialog({ item, onClose, onSaved }) {
-  const [form, setForm] = useState(item ? { sessionDate: inputDateTime(item.sessionDate), startTime: item.startTime || "", durationMinutes: String(item.durationMinutes), distanceKm: String(item.distanceKm), notes: item.notes || "" } : { sessionDate: `${today}T12:00`, startTime: "", durationMinutes: "", distanceKm: "", notes: "" }), [busy,setBusy]=useState(false),[error,setError]=useState("");
-  const pace = Number(form.durationMinutes) > 0 && Number(form.distanceKm) > 0 ? Number(form.durationMinutes)/Number(form.distanceKm) : null;
-  async function submit(e) { e.preventDefault(); setBusy(true); setError(""); try { await api(`/fitness/runs${item?`/${item._id}`:""}`, { method: item?"PATCH":"POST", body: JSON.stringify({ ...form, sessionDate: indiaIso(form.sessionDate), durationMinutes: Number(form.durationMinutes), distanceKm: Number(form.distanceKm) }) }); await onSaved(); onClose(); } catch(e) { setError(e.message); } finally { setBusy(false); } }
-  return <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="fitness-run-title"><div className="modal-head"><div><div className="eyebrow">RUNNING LOG</div><h2 id="fitness-run-title">{item?"Edit run":"Add a run"}</h2></div><button className="icon-btn" aria-label="Close" onClick={onClose}><X size={18}/></button></div><form onSubmit={submit}><div className="modal-fields"><label>Date<input required type="datetime-local" value={form.sessionDate} onChange={e=>setForm({...form,sessionDate:e.target.value})}/></label><label>Start time <span className="optional">Optional</span><input type="time" value={form.startTime} onChange={e=>setForm({...form,startTime:e.target.value})}/></label><label>Duration minutes<input required type="number" min="1" max="1440" value={form.durationMinutes} onChange={e=>setForm({...form,durationMinutes:e.target.value})}/></label><label>Distance km<input required type="number" min="0.01" step="0.01" value={form.distanceKm} onChange={e=>setForm({...form,distanceKm:e.target.value})}/></label><div className="fitness-calculation wide-field"><span>Average pace</span><strong>{pace ? `${Math.floor(pace)}:${String(Math.round((pace%1)*60)).padStart(2,"0")} min/km` : "Enter distance and duration"}</strong><span>Average speed</span><strong>{pace ? `${(Number(form.distanceKm)/(Number(form.durationMinutes)/60)).toFixed(1)} km/h` : "—"}</strong></div><label className="wide-field">Notes <span className="optional">Optional</span><textarea rows="2" value={form.notes} maxLength="1000" onChange={e=>setForm({...form,notes:e.target.value})}/></label></div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}>{busy?"Saving…":item?"Save changes":"Save run"}</button></div></form></div></div>;
+  const [form, setForm] = useState(
+      item
+        ? {
+            sessionDate: inputDateTime(item.sessionDate),
+            startTime: item.startTime || "",
+            durationMinutes: String(item.durationMinutes),
+            distanceKm: String(item.distanceKm),
+            notes: item.notes || "",
+          }
+        : {
+            sessionDate: `${today}T12:00`,
+            startTime: "",
+            durationMinutes: "",
+            distanceKm: "",
+            notes: "",
+          },
+    ),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const pace =
+    Number(form.durationMinutes) > 0 && Number(form.distanceKm) > 0
+      ? Number(form.durationMinutes) / Number(form.distanceKm)
+      : null;
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/fitness/runs${item ? `/${item._id}` : ""}`, {
+        method: item ? "PATCH" : "POST",
+        body: JSON.stringify({
+          ...form,
+          sessionDate: indiaIso(form.sessionDate),
+          durationMinutes: Number(form.durationMinutes),
+          distanceKm: Number(form.distanceKm),
+        }),
+      });
+      await onSaved();
+      onClose();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fitness-run-title"
+      >
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">RUNNING LOG</div>
+            <h2 id="fitness-run-title">{item ? "Edit run" : "Add a run"}</h2>
+          </div>
+          <button className="icon-btn" aria-label="Close" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-fields">
+            <label>
+              Date
+              <input
+                required
+                type="datetime-local"
+                value={form.sessionDate}
+                onChange={(e) =>
+                  setForm({ ...form, sessionDate: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Start time <span className="optional">Optional</span>
+              <input
+                type="time"
+                value={form.startTime}
+                onChange={(e) =>
+                  setForm({ ...form, startTime: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Duration minutes
+              <input
+                required
+                type="number"
+                min="1"
+                max="1440"
+                value={form.durationMinutes}
+                onChange={(e) =>
+                  setForm({ ...form, durationMinutes: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Distance km
+              <input
+                required
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={form.distanceKm}
+                onChange={(e) =>
+                  setForm({ ...form, distanceKm: e.target.value })
+                }
+              />
+            </label>
+            <div className="fitness-calculation wide-field">
+              <span>Average pace</span>
+              <strong>
+                {pace
+                  ? `${Math.floor(pace)}:${String(Math.round((pace % 1) * 60)).padStart(2, "0")} min/km`
+                  : "Enter distance and duration"}
+              </strong>
+              <span>Average speed</span>
+              <strong>
+                {pace
+                  ? `${(Number(form.distanceKm) / (Number(form.durationMinutes) / 60)).toFixed(1)} km/h`
+                  : "—"}
+              </strong>
+            </div>
+            <label className="wide-field">
+              Notes <span className="optional">Optional</span>
+              <textarea
+                rows="2"
+                value={form.notes}
+                maxLength="1000"
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              />
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-actions">
+            <button type="button" className="btn ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn primary" disabled={busy}>
+              {busy ? "Saving…" : item ? "Save changes" : "Save run"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function ThemeToggle({ theme, onToggle }) {
   const next = theme === "dark" ? "light" : "dark";
-  return <button type="button" className="theme-toggle" aria-label={`Switch to ${next} mode`} title={`${theme === "dark" ? "Dark" : "Light"} mode · switch to ${next}`} onClick={onToggle}>{theme === "dark" ? <Sun size={17}/> : <Moon size={17}/>}<span>{theme === "dark" ? "Dark" : "Light"}</span></button>;
+  return (
+    <button
+      type="button"
+      className="theme-toggle"
+      aria-label={`Switch to ${next} mode`}
+      title={`${theme === "dark" ? "Dark" : "Light"} mode · switch to ${next}`}
+      onClick={onToggle}
+    >
+      {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+      <span>{theme === "dark" ? "Dark" : "Light"}</span>
+    </button>
+  );
 }
 
 function Login({ onLogin, theme, onThemeToggle }) {
@@ -539,7 +1869,20 @@ function Login({ onLogin, theme, onThemeToggle }) {
       setBusy(false);
     }
   }
-  if (pendingApproval) return <PendingApproval theme={theme} onThemeToggle={onThemeToggle} username={pendingApproval} onBack={() => { setPendingApproval(""); setRegistering(false); setPassword(""); setError(""); }} />;
+  if (pendingApproval)
+    return (
+      <PendingApproval
+        theme={theme}
+        onThemeToggle={onThemeToggle}
+        username={pendingApproval}
+        onBack={() => {
+          setPendingApproval("");
+          setRegistering(false);
+          setPassword("");
+          setError("");
+        }}
+      />
+    );
   return (
     <div className="login-page">
       <div className="login-card">
@@ -548,17 +1891,25 @@ function Login({ onLogin, theme, onThemeToggle }) {
             <Wallet size={20} />
           </div>
           <span>LifeLedger</span>
-          <ThemeToggle theme={theme} onToggle={onThemeToggle}/>
+          <ThemeToggle theme={theme} onToggle={onThemeToggle} />
         </div>
-        <div className="eyebrow">{registering ? "CREATE YOUR ACCOUNT" : "YOUR PERSONAL SPACE"}</div>
-        <div className="owner-notice">Personal application owned by <strong>{OWNER_DISPLAY_NAME}</strong>. New accounts require administrator approval before they can access the application.</div>
+        <div className="eyebrow">
+          {registering ? "CREATE YOUR ACCOUNT" : "YOUR PERSONAL SPACE"}
+        </div>
+        <div className="owner-notice">
+          Personal application owned by <strong>{OWNER_DISPLAY_NAME}</strong>.
+          New accounts require administrator approval before they can access the
+          application.
+        </div>
         <h1>
           A little more clarity,
           <br />
           <span>every day.</span>
         </h1>
         <p className="login-sub">
-          {registering ? "Create a private space for your money and learning." : "Sign in to see how your money and learning are growing."}
+          {registering
+            ? "Create a private space for your money and learning."
+            : "Sign in to see how your money and learning are growing."}
         </p>
         <form onSubmit={submit}>
           <label>
@@ -576,29 +1927,57 @@ function Login({ onLogin, theme, onThemeToggle }) {
           <label>
             Password
             <span className="password-input-wrap">
-            <input
-              autoComplete={registering ? "new-password" : "current-password"}
-              type={showPassword ? "text" : "password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={registering ? 10 : undefined}
-              maxLength={72}
-              placeholder="Your password"
-            />
-            <button type="button" className="password-toggle" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+              <input
+                autoComplete={registering ? "new-password" : "current-password"}
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={registering ? 10 : undefined}
+                maxLength={72}
+                placeholder="Your password"
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword((visible) => !visible)}
+              >
+                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
             </span>
           </label>
           {error && <div className="form-error">{error}</div>}
           <button disabled={busy} className="btn primary full">
-            {busy ? (registering ? "Creating account…" : "Signing in…") : (registering ? "Create account" : "Sign in")}
+            {busy
+              ? registering
+                ? "Creating account…"
+                : "Signing in…"
+              : registering
+                ? "Create account"
+                : "Sign in"}
             <ChevronRight size={17} />
           </button>
         </form>
-        <button className="auth-switch" type="button" onClick={() => { setRegistering(value => !value); setError(""); }}>
-          {registering ? "Already have an account? Sign in" : "New here? Create an account"}
+        <button
+          className="auth-switch"
+          type="button"
+          onClick={() => {
+            setRegistering((value) => !value);
+            setError("");
+          }}
+        >
+          {registering
+            ? "Already have an account? Sign in"
+            : "New here? Create an account"}
         </button>
-        {registering && <div className="field-help">Username: 3–30 letters, numbers, dots, dashes, or underscores. Password: at least 10 characters.</div>}
+        {registering && (
+          <div className="field-help">
+            Username: 3–30 letters, numbers, dots, dashes, or underscores.
+            Password: at least 10 characters.
+          </div>
+        )}
         <div className="login-note">
           <span className="secure-dot" /> Private to your account
         </div>
@@ -640,15 +2019,37 @@ function Login({ onLogin, theme, onThemeToggle }) {
 }
 
 function PendingApproval({ username, onBack, theme, onThemeToggle }) {
-  return <div className="login-page approval-page"><section className="pending-card" aria-labelledby="pending-title">
-    <div className="brand login-brand"><div className="brand-mark"><Wallet size={20}/></div><span>LifeLedger</span><ThemeToggle theme={theme} onToggle={onThemeToggle}/></div>
-    <div className="pending-icon"><Clock3 size={23}/></div>
-    <div className="eyebrow">ACCOUNT CREATED</div>
-    <h1 id="pending-title">You’re on the list, {username}.</h1>
-    <p>Your account has been created successfully and is waiting for approval from <strong>{OWNER_DISPLAY_NAME}</strong>. You will be able to access LifeLedger after the administrator approves your account.</p>
-    <div className="owner-notice">Personal application owned by <strong>{OWNER_DISPLAY_NAME}</strong>. New accounts require administrator approval before they can access the application.</div>
-    <button className="btn primary full" onClick={onBack}>Return to sign in <ChevronRight size={17}/></button>
-  </section></div>;
+  return (
+    <div className="login-page approval-page">
+      <section className="pending-card" aria-labelledby="pending-title">
+        <div className="brand login-brand">
+          <div className="brand-mark">
+            <Wallet size={20} />
+          </div>
+          <span>LifeLedger</span>
+          <ThemeToggle theme={theme} onToggle={onThemeToggle} />
+        </div>
+        <div className="pending-icon">
+          <Clock3 size={23} />
+        </div>
+        <div className="eyebrow">ACCOUNT CREATED</div>
+        <h1 id="pending-title">You’re on the list, {username}.</h1>
+        <p>
+          Your account has been created successfully and is waiting for approval
+          from <strong>{OWNER_DISPLAY_NAME}</strong>. You will be able to access
+          LifeLedger after the administrator approves your account.
+        </p>
+        <div className="owner-notice">
+          Personal application owned by <strong>{OWNER_DISPLAY_NAME}</strong>.
+          New accounts require administrator approval before they can access the
+          application.
+        </div>
+        <button className="btn primary full" onClick={onBack}>
+          Return to sign in <ChevronRight size={17} />
+        </button>
+      </section>
+    </div>
+  );
 }
 
 function PageTitle({ eyebrow, title, description, action }) {
@@ -724,7 +2125,9 @@ function Dashboard({ settings, onNavigate, onToast }) {
       setData(summary);
       if (selectedWeek === monday(today)) setWeeklyReport(summary.weeklyBudget);
       else {
-        const weekly = await api(`/budgets/weekly${qs({ weekStart: selectedWeek })}`);
+        const weekly = await api(
+          `/budgets/weekly${qs({ weekStart: selectedWeek })}`,
+        );
         setWeeklyReport(weekly.report);
       }
       setError("");
@@ -737,7 +2140,9 @@ function Dashboard({ settings, onNavigate, onToast }) {
       .then((r) => setReview(r.item.reflection || ""))
       .catch(() => {});
   }, [selectedWeek]);
-  useEffect(() => { refresh(); }, [selectedWeek]);
+  useEffect(() => {
+    refresh();
+  }, [selectedWeek]);
   async function saveReview() {
     try {
       await api(`/daily-reviews/${today}`, {
@@ -752,8 +2157,17 @@ function Dashboard({ settings, onNavigate, onToast }) {
   const daily = data?.trend || [];
   const total = data?.month?.spent || 0;
   const budget = data?.budget?.amount || 0;
-  const hiddenOverviewCategories = new Set((data?.hiddenOverviewCategories || (data?.monthlyCategoryBudget?.categoryBudgets || []).filter((item) => item.showInOverview === false).map((item) => item.category)).map((category) => category.toLocaleLowerCase()));
-  const overviewExpenseCategories = (data?.categories || []).filter((item) => !hiddenOverviewCategories.has(item.name.toLocaleLowerCase()));
+  const hiddenOverviewCategories = new Set(
+    (
+      data?.hiddenOverviewCategories ||
+      (data?.monthlyCategoryBudget?.categoryBudgets || [])
+        .filter((item) => item.showInOverview === false)
+        .map((item) => item.category)
+    ).map((category) => category.toLocaleLowerCase()),
+  );
+  const overviewExpenseCategories = (data?.categories || []).filter(
+    (item) => !hiddenOverviewCategories.has(item.name.toLocaleLowerCase()),
+  );
   const pct = budget ? Math.min((total / budget) * 100, 100) : 0;
   return (
     <>
@@ -834,11 +2248,21 @@ function Dashboard({ settings, onNavigate, onToast }) {
       <WeeklyOverview
         report={weeklyReport}
         weekStart={selectedWeek}
-        onWeekChange={(delta) => setSelectedWeek((week) => addDays(week, delta * 7))}
+        onWeekChange={(delta) =>
+          setSelectedWeek((week) => addDays(week, delta * 7))
+        }
         onCurrentWeek={() => setSelectedWeek(monday(today))}
-        onManage={() => onNavigate("/budget", { state: { weekStart: selectedWeek } })}
+        onManage={() =>
+          onNavigate("/budget", { state: { weekStart: selectedWeek } })
+        }
       />
-      {settings?.showMonthlyCategoryBudgetsInOverview && data?.monthlyCategoryBudget && <MonthlyOverviewWidget report={data.monthlyCategoryBudget} onViewAll={() => onNavigate("/budget")} />}
+      {settings?.showMonthlyCategoryBudgetsInOverview &&
+        data?.monthlyCategoryBudget && (
+          <MonthlyOverviewWidget
+            report={data.monthlyCategoryBudget}
+            onViewAll={() => onNavigate("/budget")}
+          />
+        )}
       <div className="dashboard-grid">
         <Card className="spending-card">
           <SectionHead
@@ -972,7 +2396,7 @@ function Dashboard({ settings, onNavigate, onToast }) {
                       paddingAngle={3}
                       stroke="none"
                     >
-                    {overviewExpenseCategories.map((x, i) => (
+                      {overviewExpenseCategories.map((x, i) => (
                         <Cell key={x.name} fill={palette[i % palette.length]} />
                       ))}
                     </Pie>
@@ -1005,9 +2429,26 @@ function Dashboard({ settings, onNavigate, onToast }) {
           ) : (
             <Empty
               icon={ChartNoAxesCombined}
-              title={data?.categories?.length ? "Category cards hidden" : "Your categories will show here"}
-              description={data?.categories?.length ? "All expense categories are hidden from Overview. Change their visibility in Budget." : "Log an expense to see where your money goes."}
-              action={data?.categories?.length ? <button className="text-btn" onClick={() => onNavigate("/budget")}>Manage category visibility <ChevronRight size={15} /></button> : null}
+              title={
+                data?.categories?.length
+                  ? "Category cards hidden"
+                  : "Your categories will show here"
+              }
+              description={
+                data?.categories?.length
+                  ? "All expense categories are hidden from Overview. Change their visibility in Budget."
+                  : "Log an expense to see where your money goes."
+              }
+              action={
+                data?.categories?.length ? (
+                  <button
+                    className="text-btn"
+                    onClick={() => onNavigate("/budget")}
+                  >
+                    Manage category visibility <ChevronRight size={15} />
+                  </button>
+                ) : null
+              }
             />
           )}
         </Card>
@@ -1186,17 +2627,27 @@ function Dashboard({ settings, onNavigate, onToast }) {
 }
 
 function budgetMessage(report) {
-  if (!report || report.budget === null) return "Set a weekly budget to see your progress here.";
+  if (!report || report.budget === null)
+    return "Set a weekly budget to see your progress here.";
   const pct = report.percentUsed || 0;
   if (report.spent === 0) return "No spending yet this week.";
-  if (report.remaining < 0) return `You've exceeded your weekly budget by ${money(Math.abs(report.remaining))}.`;
+  if (report.remaining < 0)
+    return `You've exceeded your weekly budget by ${money(Math.abs(report.remaining))}.`;
   if (pct >= 100) return "Your weekly budget is fully used.";
-  if (pct >= 80) return `You've used ${Math.floor(pct)}% of your weekly budget. Consider limiting non-essential spending.`;
-  if (pct >= 50) return `You've used ${Math.floor(pct)}% of your weekly budget. Keep an eye on the remaining amount.`;
+  if (pct >= 80)
+    return `You've used ${Math.floor(pct)}% of your weekly budget. Consider limiting non-essential spending.`;
+  if (pct >= 50)
+    return `You've used ${Math.floor(pct)}% of your weekly budget. Keep an eye on the remaining amount.`;
   return `You've used ${Math.floor(pct)}% of your weekly budget. You're within budget.`;
 }
 
-function WeeklyOverview({ report, weekStart, onWeekChange, onCurrentWeek, onManage }) {
+function WeeklyOverview({
+  report,
+  weekStart,
+  onWeekChange,
+  onCurrentWeek,
+  onManage,
+}) {
   const budgetSet = report?.budget !== null && report?.budget !== undefined;
   const pct = report?.percentUsed ?? 0;
   const visualPct = Math.min(100, Math.max(0, pct));
@@ -1207,31 +2658,90 @@ function WeeklyOverview({ report, weekStart, onWeekChange, onCurrentWeek, onMana
       <div className="weekly-overview-head">
         <div>
           <span className="eyebrow">WEEKLY BUDGET OVERVIEW</span>
-          <h2>{niceDate(`${weekStart}T12:00:00`)} – {niceDate(`${end}T12:00:00`)}</h2>
+          <h2>
+            {niceDate(`${weekStart}T12:00:00`)} – {niceDate(`${end}T12:00:00`)}
+          </h2>
         </div>
         <div className="week-nav">
-          <button className="icon-btn small" aria-label="Previous week" onClick={() => onWeekChange(-1)}><ChevronLeft size={16} /></button>
-          <button className="text-btn" onClick={onCurrentWeek}>This week</button>
-          <button className="icon-btn small" aria-label="Next week" onClick={() => onWeekChange(1)}><ChevronRight size={16} /></button>
+          <button
+            className="icon-btn small"
+            aria-label="Previous week"
+            onClick={() => onWeekChange(-1)}
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button className="text-btn" onClick={onCurrentWeek}>
+            This week
+          </button>
+          <button
+            className="icon-btn small"
+            aria-label="Next week"
+            onClick={() => onWeekChange(1)}
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
-      {!report ? <div className="table-loading">Loading weekly budget…</div> : !budgetSet ? (
-        <div className="weekly-empty"><p>No budget configured for this week.</p><button className="btn primary small-btn" onClick={onManage}>Set weekly budget</button></div>
+      {!report ? (
+        <div className="table-loading">Loading weekly budget…</div>
+      ) : !budgetSet ? (
+        <div className="weekly-empty">
+          <p>No budget configured for this week.</p>
+          <button className="btn primary small-btn" onClick={onManage}>
+            Set weekly budget
+          </button>
+        </div>
       ) : (
         <>
           <div className="weekly-overview-metrics">
-            <div><span>Weekly budget</span><strong>{money(report.budget)}</strong></div>
-            <div><span>Spent</span><strong>{money(report.spent)}</strong></div>
-            <div><span>{report.remaining < 0 ? "Over budget" : "Remaining"}</span><strong>{money(Math.abs(report.remaining))}{report.remaining < 0 ? " over" : ""}</strong></div>
-            <div><span>Used</span><strong>{Math.floor(pct)}%</strong></div>
+            <div>
+              <span>Weekly budget</span>
+              <strong>{money(report.budget)}</strong>
+            </div>
+            <div>
+              <span>Spent</span>
+              <strong>{money(report.spent)}</strong>
+            </div>
+            <div>
+              <span>{report.remaining < 0 ? "Over budget" : "Remaining"}</span>
+              <strong>
+                {money(Math.abs(report.remaining))}
+                {report.remaining < 0 ? " over" : ""}
+              </strong>
+            </div>
+            <div>
+              <span>Used</span>
+              <strong>{Math.floor(pct)}%</strong>
+            </div>
           </div>
-          <div className="budget-progress" role="progressbar" aria-label="Weekly budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow={visualPct} aria-valuetext={`${Math.floor(pct)}% used`}>
+          <div
+            className="budget-progress"
+            role="progressbar"
+            aria-label="Weekly budget used"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={visualPct}
+            aria-valuetext={`${Math.floor(pct)}% used`}
+          >
             <i style={{ width: `${visualPct}%`, background: color }} />
           </div>
-          <div className={`budget-insight ${pct >= 80 ? "warning" : ""}`} role="status">{budgetMessage(report)}</div>
+          <div
+            className={`budget-insight ${pct >= 80 ? "warning" : ""}`}
+            role="status"
+          >
+            {budgetMessage(report)}
+          </div>
           <div className="weekly-overview-foot">
-            <span>{report.dailyAllowance !== null ? `${money(report.dailyAllowance)} available per remaining day` : report.remainingDays === 0 ? "Week complete · final result shown" : "No budget remains for additional spending"}</span>
-            <button className="text-btn" onClick={onManage}>Manage and view report <ChevronRight size={15} /></button>
+            <span>
+              {report.dailyAllowance !== null
+                ? `${money(report.dailyAllowance)} available per remaining day`
+                : report.remainingDays === 0
+                  ? "Week complete · final result shown"
+                  : "No budget remains for additional spending"}
+            </span>
+            <button className="text-btn" onClick={onManage}>
+              Manage and view report <ChevronRight size={15} />
+            </button>
           </div>
         </>
       )}
@@ -1239,16 +2749,120 @@ function WeeklyOverview({ report, weekStart, onWeekChange, onCurrentWeek, onMana
   );
 }
 
-const categoryEmoji = (name) => ({ Food: "🍽️", Snacks: "🍿", "Snacks and beverages": "🥤", Beverages: "🥤", Entertainment: "🎬", Travel: "🚗", Shopping: "🛍️", Groceries: "🛒", "Bills and Subscriptions": "🧾", "Bills and subscriptions": "🧾", Health: "💊", "Personal Care": "🧴", "Health and personal care": "💊", Education: "📚", Other: "📦", Miscellaneous: "📦" })[name] || "🏷️";
-function monthTitle(month) { return new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${month}-15T12:00:00Z`)); }
+const categoryEmoji = (name) =>
+  ({
+    Food: "🍽️",
+    Snacks: "🍿",
+    "Snacks and beverages": "🥤",
+    Beverages: "🥤",
+    Entertainment: "🎬",
+    Travel: "🚗",
+    Shopping: "🛍️",
+    Groceries: "🛒",
+    "Bills and Subscriptions": "🧾",
+    "Bills and subscriptions": "🧾",
+    Health: "💊",
+    "Personal Care": "🧴",
+    "Health and personal care": "💊",
+    Education: "📚",
+    Other: "📦",
+    Miscellaneous: "📦",
+    "Emergency savings": "🙈",
+    Home: "🏠",
+  })[name] || "🏷️";
+function monthTitle(month) {
+  return new Intl.DateTimeFormat("en-IN", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${month}-15T12:00:00Z`));
+}
 
 function MonthlyOverviewWidget({ report, onViewAll }) {
-  const categories = (report.categoryBudgets || []).filter((item) => item.showInOverview !== false);
-  return <Card className="monthly-overview-widget">
-    <SectionHead title="Monthly category spending" sub={`${monthTitle(report.month)} · ${money(report.spent)} spent`} action={<button className="text-btn" onClick={onViewAll}>View all <ChevronRight size={15} /></button>} />
-    <div className="monthly-overview-summary"><div><span>Monthly budget</span><strong>{money(report.monthlyBudget)}</strong></div><div><span>Spent</span><strong>{money(report.spent)}</strong></div><div><span>{report.remaining < 0 ? "Over budget" : "Remaining"}</span><strong>{money(Math.abs(report.remaining))}{report.remaining < 0 ? " over" : ""}</strong></div><div><span>Overall used</span><strong>{report.percentUsed === null ? "—" : `${Math.floor(report.percentUsed)}%`}</strong></div></div>
-    {categories.length ? <div className="monthly-overview-categories">{categories.slice(0, 4).map((item) => <div key={item.id}><span>{categoryEmoji(item.category)} {item.category}</span><b>{money(item.spent)} / {money(item.allocated)}</b><div className="progress-track"><i style={{ width: `${Math.min(100, Math.max(0, item.percentUsed))}%`, background: item.status === "Exceeded" ? "#dc686a" : item.status === "Near Limit" ? "#e6a442" : "#6481e7" }} /></div><small>{item.status} · {money(item.remaining)} remaining</small></div>)}</div> : <div className="monthly-overview-empty"><p>{report.categoryBudgets?.length ? "All category cards are hidden from Overview. You can change their visibility in Budget." : "No monthly category limits yet. Add allocations to see your category breakdown here."}</p><button className="btn secondary small-btn" onClick={onViewAll}>{report.categoryBudgets?.length ? "Manage category limits" : "Set up monthly limits"}</button></div>}
-  </Card>;
+  const categories = (report.categoryBudgets || []).filter(
+    (item) => item.showInOverview !== false,
+  );
+  return (
+    <Card className="monthly-overview-widget">
+      <SectionHead
+        title="Monthly category spending"
+        sub={`${monthTitle(report.month)} · ${money(report.spent)} spent`}
+        action={
+          <button className="text-btn" onClick={onViewAll}>
+            View all <ChevronRight size={15} />
+          </button>
+        }
+      />
+      <div className="monthly-overview-summary">
+        <div>
+          <span>Monthly budget</span>
+          <strong>{money(report.monthlyBudget)}</strong>
+        </div>
+        <div>
+          <span>Spent</span>
+          <strong>{money(report.spent)}</strong>
+        </div>
+        <div>
+          <span>{report.remaining < 0 ? "Over budget" : "Remaining"}</span>
+          <strong>
+            {money(Math.abs(report.remaining))}
+            {report.remaining < 0 ? " over" : ""}
+          </strong>
+        </div>
+        <div>
+          <span>Overall used</span>
+          <strong>
+            {report.percentUsed === null
+              ? "—"
+              : `${Math.floor(report.percentUsed)}%`}
+          </strong>
+        </div>
+      </div>
+      {categories.length ? (
+        <div className="monthly-overview-categories">
+          {categories.slice(0, 4).map((item) => (
+            <div key={item.id}>
+              <span>
+                {categoryEmoji(item.category)} {item.category}
+              </span>
+              <b>
+                {money(item.spent)} / {money(item.allocated)}
+              </b>
+              <div className="progress-track">
+                <i
+                  style={{
+                    width: `${Math.min(100, Math.max(0, item.percentUsed))}%`,
+                    background:
+                      item.status === "Exceeded"
+                        ? "#dc686a"
+                        : item.status === "Near Limit"
+                          ? "#e6a442"
+                          : "#6481e7",
+                  }}
+                />
+              </div>
+              <small>
+                {item.status} · {money(item.remaining)} remaining
+              </small>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="monthly-overview-empty">
+          <p>
+            {report.categoryBudgets?.length
+              ? "All category cards are hidden from Overview. You can change their visibility in Budget."
+              : "No monthly category limits yet. Add allocations to see your category breakdown here."}
+          </p>
+          <button className="btn secondary small-btn" onClick={onViewAll}>
+            {report.categoryBudgets?.length
+              ? "Manage category limits"
+              : "Set up monthly limits"}
+          </button>
+        </div>
+      )}
+    </Card>
+  );
 }
 
 function MonthlyBudgetSection({ settings, onToast }) {
@@ -1261,39 +2875,114 @@ function MonthlyBudgetSection({ settings, onToast }) {
   const [busy, setBusy] = useState(false);
   const [details, setDetails] = useState(null);
   const [monthlyExpenseEdit, setMonthlyExpenseEdit] = useState(null);
-  const categoriesForBudget = settings?.categories?.length ? settings.categories : categories;
+  const categoriesForBudget = expenseCategories(settings?.categories);
   async function load() {
-    setLoading(true); setError("");
-    try { const nextReport = (await api(`/budgets/monthly${qs({ month })}`)).report; setReport(nextReport); return nextReport; }
-    catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+    setLoading(true);
+    setError("");
+    try {
+      const nextReport = (await api(`/budgets/monthly${qs({ month })}`)).report;
+      setReport(nextReport);
+      return nextReport;
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { load(); }, [month, settings?.monthlyBudgetPaise]);
+  useEffect(() => {
+    load();
+  }, [month, settings?.monthlyBudgetPaise]);
   async function loadDetails(item) {
-    try { const result = await api(`/budgets/monthly/categories/${item.id}/expenses`); setDetails({ item, expenses: result.items.map((expense) => ({ ...expense, _id: expense.id })) }); }
-    catch (e) { setError(e.message); }
+    try {
+      const result = await api(
+        `/budgets/monthly/categories/${item.id}/expenses`,
+      );
+      setDetails({
+        item,
+        expenses: result.items.map((expense) => ({
+          ...expense,
+          _id: expense.id,
+        })),
+      });
+    } catch (e) {
+      setError(e.message);
+    }
   }
   async function saveAllocation(event) {
     event.preventDefault();
     const amount = Number(form.amount);
-    if (!Number.isFinite(amount) || amount <= 0) { setError("Enter a monthly allocation greater than zero."); return; }
-    setBusy(true); setError("");
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Enter a monthly allocation greater than zero.");
+      return;
+    }
+    setBusy(true);
+    setError("");
     try {
       const editing = Boolean(form.id);
-      const options = { amount, description: form.description || "", showInOverview: form.showInOverview !== false, includeInOverallBudget: form.includeInOverallBudget !== false };
-      const result = await api(editing ? `/budgets/monthly/categories/${form.id}` : "/budgets/monthly/categories", { method: editing ? "PUT" : "POST", body: JSON.stringify(editing ? options : { ...options, month, category: form.category }) });
-      setReport(result.report); setForm(null); onToast(editing ? "Monthly category budget updated." : "Monthly category budget added.");
-    } catch (e) { setError(e.message); }
-    finally { setBusy(false); }
+      const options = {
+        amount,
+        description: form.description || "",
+        showInOverview: form.showInOverview !== false,
+        includeInOverallBudget: form.includeInOverallBudget !== false,
+      };
+      const result = await api(
+        editing
+          ? `/budgets/monthly/categories/${form.id}`
+          : "/budgets/monthly/categories",
+        {
+          method: editing ? "PUT" : "POST",
+          body: JSON.stringify(
+            editing ? options : { ...options, month, category: form.category },
+          ),
+        },
+      );
+      setReport(result.report);
+      setForm(null);
+      onToast(
+        editing
+          ? "Monthly category budget updated."
+          : "Monthly category budget added.",
+      );
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   }
   async function deleteAllocation(item) {
-    if (!window.confirm(`Delete the ${item.category} allocation for ${monthTitle(month)}? Expenses will remain unchanged.`)) return;
-    try { setReport((await api(`/budgets/monthly/categories/${item.id}`, { method: "DELETE" })).report); onToast("Monthly category budget deleted."); }
-    catch (e) { setError(e.message); }
+    if (
+      !window.confirm(
+        `Delete the ${item.category} allocation for ${monthTitle(month)}? Expenses will remain unchanged.`,
+      )
+    )
+      return;
+    try {
+      setReport(
+        (
+          await api(`/budgets/monthly/categories/${item.id}`, {
+            method: "DELETE",
+          })
+        ).report,
+      );
+      onToast("Monthly category budget deleted.");
+    } catch (e) {
+      setError(e.message);
+    }
   }
   async function copyPrevious() {
-    try { setReport((await api("/budgets/monthly/categories/copy", { method: "POST", body: JSON.stringify({ month }) })).report); onToast("Previous month’s category budgets copied."); }
-    catch (e) { setError(e.message); }
+    try {
+      setReport(
+        (
+          await api("/budgets/monthly/categories/copy", {
+            method: "POST",
+            body: JSON.stringify({ month }),
+          })
+        ).report,
+      );
+      onToast("Previous month’s category budgets copied.");
+    } catch (e) {
+      setError(e.message);
+    }
   }
   function shiftMonth(amount) {
     const [year, monthNumber] = month.split("-").map(Number);
@@ -1304,30 +2993,479 @@ function MonthlyBudgetSection({ settings, onToast }) {
   const onExpenseSaved = async () => {
     const nextReport = await load();
     if (details) {
-      const updatedItem = nextReport?.categoryBudgets.find((item) => item.id === details.item.id) || details.item;
+      const updatedItem =
+        nextReport?.categoryBudgets.find(
+          (item) => item.id === details.item.id,
+        ) || details.item;
       await loadDetails(updatedItem);
     }
   };
-  return <section className="monthly-budget-section">
-    <div className="monthly-budget-heading"><div><span className="eyebrow">MONTHLY PLAN</span><h2>My Monthly Spending Limits</h2><p>Monthly allocations are calculated from the expenses you record.</p></div><div className="month-nav"><button className="icon-btn small" aria-label="Previous month" onClick={() => shiftMonth(-1)}><ChevronLeft size={16} /></button><strong>{monthTitle(month)}</strong><button className="icon-btn small" aria-label="Next month" onClick={() => shiftMonth(1)}><ChevronRight size={16} /></button><button className="btn secondary small-btn" onClick={() => setMonth(currentMonth)}>Current month</button></div></div>
-    {error && <div className="inline-error">{error}<button onClick={() => setError("")}>Dismiss</button></div>}
-    {loading || !report ? <div className="table-loading">Loading monthly budget…</div> : <>
-      <div className="stat-grid budget-stats monthly-budget-stats"><Stat label="Monthly budget" value={money(report.monthlyBudget)} sub="Overall amount from Settings" icon={Wallet} color="blue" /><Stat label="Allocated to categories" value={money(report.allocated)} sub={`${report.categoryBudgets.length} category limits`} icon={WalletCards} color="purple" /><Stat label="Spent this month" value={money(report.spent)} sub={`${report.expenseCount} recorded expenses`} icon={Activity} color="orange" /><Stat label="Unallocated" value={money(report.unallocated)} sub={report.allocationsOverBudget ? "Category allocations exceed your budget" : "Available to allocate"} icon={ChartNoAxesCombined} color={report.allocationsOverBudget ? "orange" : "green"} /><Stat label={report.remaining < 0 ? "Over monthly budget" : "Overall remaining"} value={money(Math.abs(report.remaining))} sub={report.remaining < 0 ? "Spent beyond the monthly budget" : "Across all expense categories"} icon={Activity} color={report.remaining < 0 ? "orange" : "green"} /></div>
-      {report.allocationsOverBudget && <div className="allocation-warning" role="status">Category allocations exceed the monthly budget by {money(Math.abs(report.unallocated))}. Adjust allocations or change your monthly budget in Settings; the overall budget was not changed.</div>}
-      <Card className="monthly-budget-card"><SectionHead title={`${monthTitle(month)} category budgets`} sub="Actual spending comes from your expense records." action={<div className="limit-actions"><button className="btn secondary" onClick={copyPrevious}>Copy previous month</button><button className="btn primary" onClick={() => setForm({ category: categoriesForBudget[0] || "", amount: "", description: "", showInOverview: true, includeInOverallBudget: true })}><Plus size={15} /> Add Category Budget</button></div>} />
-        {report.categoryBudgets.length ? <div className="limit-grid">{report.categoryBudgets.map((item) => <article className="limit-card monthly-limit-card" key={item.id}><button className="monthly-category-open" onClick={() => loadDetails(item)}><span className="limit-icon">{categoryEmoji(item.category)}</span><span><h3>{item.category}</h3><span className={`limit-status ${item.status.toLowerCase().replace(" ", "-")}`}>{item.status}</span></span></button><div className="limit-card-actions"><button className="icon-btn small" aria-label={`Edit ${item.category} monthly budget`} onClick={() => setForm({ ...item, amount: String(item.allocated) })}><Edit2 size={14} /></button><button className="icon-btn small" aria-label={`Delete ${item.category} monthly budget`} onClick={() => deleteAllocation(item)}><Trash2 size={14} /></button></div><div className="limit-amount"><span>Allocated this month</span><strong>{money(item.allocated)}</strong></div><div className="limit-metrics"><span>Spent <b>{money(item.spent)}</b></span><span>Remaining <b>{money(item.remaining)}</b></span><span>Used <b>{item.percentUsed.toFixed(1)}%</b></span></div><div className="progress-track" role="progressbar" aria-label={`${item.category} monthly budget used`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.min(100, Math.max(0, item.percentUsed))}><i style={{ width: `${Math.min(100, Math.max(0, item.percentUsed))}%`, background: item.status === "Exceeded" ? "#dc686a" : item.status === "Near Limit" ? "#e6a442" : "#6481e7" }} /></div><button className="text-btn monthly-view-expenses" onClick={() => loadDetails(item)}>View category expenses <ChevronRight size={14} /></button></article>)}</div> : <Empty title="No monthly category budgets" description="Add category allocations to see how much you can spend and what remains." action={<button className="btn primary small-btn" onClick={() => setForm({ category: categoriesForBudget[0] || "", amount: "", description: "", showInOverview: true, includeInOverallBudget: true })}><Plus size={14} /> Add Category Budget</button>} />}
-      </Card>
-    </>}
-    {form && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="monthly-budget-form-title"><div className="modal-head"><div><div className="eyebrow">{monthTitle(month)}</div><h2 id="monthly-budget-form-title">{form.id ? "Edit category budget" : "Add category budget"}</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setForm(null)}><X size={18} /></button></div><form onSubmit={saveAllocation}><div className="modal-fields">{!form.id && <label>Expense category<select required value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>{categoriesForBudget.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>}<label>Monthly allocation <span className="input-prefix"><b>₹</b><input type="number" min="0.01" step="0.01" required value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></span></label><label className="wide-field">Description <span className="optional">Optional</span><input maxLength="240" value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label><div className="monthly-allocation-toggles"><div className="allocation-toggle"><span><strong>Show in Overview</strong><small>Display this category's spending card in the main Overview dashboard.</small></span><button type="button" role="switch" aria-label="Show in Overview" aria-checked={form.showInOverview !== false} className={`preference-switch ${form.showInOverview !== false ? "enabled" : ""}`} onClick={() => setForm({ ...form, showInOverview: form.showInOverview === false })}><i /></button></div><div className="allocation-toggle"><span><strong>Include in Overall Budget</strong><small>Include this category's allocated amount when calculating the total category budget allocation.</small></span><button type="button" role="switch" aria-label="Include in Overall Budget" aria-checked={form.includeInOverallBudget !== false} className={`preference-switch ${form.includeInOverallBudget !== false ? "enabled" : ""}`} onClick={() => setForm({ ...form, includeInOverallBudget: form.includeInOverallBudget === false })}><i /></button></div></div></div>{error && <div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={() => setForm(null)}>Cancel</button><button className="btn primary" disabled={busy}>{busy ? "Saving…" : "Save allocation"}</button></div></form></div></div>}
-    {details && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="monthly-category-details-title"><div className="modal-head"><div><div className="eyebrow">{monthTitle(month)}</div><h2 id="monthly-category-details-title">{details.item.category} expenses</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setDetails(null)}><X size={18} /></button></div><p className="monthly-details-total">Total spent: <strong>{money(details.item.spent)}</strong></p>{details.expenses.length ? <div className="category-expense-list">{details.expenses.map((expense) => <div key={expense._id}><div><b>{expense.description}</b><span>{niceDate(expense.transactionDate)} · {expense.paymentMethod}</span></div><strong>{money(expense.amount)}</strong><button className="icon-btn small" aria-label={`Edit ${expense.description}`} onClick={() => setMonthlyExpenseEdit(expense)}><Edit2 size={14} /></button></div>)}</div> : <Empty title="No expenses this month" description="Recorded expenses in this category will appear here." />}<div className="modal-actions"><button className="btn secondary" onClick={() => navigate("/expenses")}>Open Expenses</button><button className="btn primary" onClick={() => setDetails(null)}>Done</button></div></div></div>}
-    {monthlyExpenseEdit && <RecordModal type="expense" initial={monthlyExpenseEdit} settings={settings} onToast={onToast} onClose={() => setMonthlyExpenseEdit(null)} onSaved={onExpenseSaved} />}
-  </section>;
+  return (
+    <section className="monthly-budget-section">
+      <div className="monthly-budget-heading">
+        <div>
+          <span className="eyebrow">MONTHLY PLAN</span>
+          <h2>My Monthly Spending Limits</h2>
+          <p>
+            Monthly allocations are calculated from the expenses you record.
+          </p>
+        </div>
+        <div className="month-nav">
+          <button
+            className="icon-btn small"
+            aria-label="Previous month"
+            onClick={() => shiftMonth(-1)}
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <strong>{monthTitle(month)}</strong>
+          <button
+            className="icon-btn small"
+            aria-label="Next month"
+            onClick={() => shiftMonth(1)}
+          >
+            <ChevronRight size={16} />
+          </button>
+          <button
+            className="btn secondary small-btn"
+            onClick={() => setMonth(currentMonth)}
+          >
+            Current month
+          </button>
+        </div>
+      </div>
+      {error && (
+        <div className="inline-error">
+          {error}
+          <button onClick={() => setError("")}>Dismiss</button>
+        </div>
+      )}
+      {loading || !report ? (
+        <div className="table-loading">Loading monthly budget…</div>
+      ) : (
+        <>
+          <div className="stat-grid budget-stats monthly-budget-stats">
+            <Stat
+              label="Monthly budget"
+              value={money(report.monthlyBudget)}
+              sub="Overall amount from Settings"
+              icon={Wallet}
+              color="blue"
+            />
+            <Stat
+              label="Allocated to categories"
+              value={money(report.allocated)}
+              sub={`${report.categoryBudgets.length} category limits`}
+              icon={WalletCards}
+              color="purple"
+            />
+            <Stat
+              label="Spent this month"
+              value={money(report.spent)}
+              sub={`${report.expenseCount} recorded expenses`}
+              icon={Activity}
+              color="orange"
+            />
+            <Stat
+              label="Unallocated"
+              value={money(report.unallocated)}
+              sub={
+                report.allocationsOverBudget
+                  ? "Category allocations exceed your budget"
+                  : "Available to allocate"
+              }
+              icon={ChartNoAxesCombined}
+              color={report.allocationsOverBudget ? "orange" : "green"}
+            />
+            <Stat
+              label={
+                report.remaining < 0
+                  ? "Over monthly budget"
+                  : "Overall remaining"
+              }
+              value={money(Math.abs(report.remaining))}
+              sub={
+                report.remaining < 0
+                  ? "Spent beyond the monthly budget"
+                  : "Across all expense categories"
+              }
+              icon={Activity}
+              color={report.remaining < 0 ? "orange" : "green"}
+            />
+          </div>
+          {report.allocationsOverBudget && (
+            <div className="allocation-warning" role="status">
+              Category allocations exceed the monthly budget by{" "}
+              {money(Math.abs(report.unallocated))}. Adjust allocations or
+              change your monthly budget in Settings; the overall budget was not
+              changed.
+            </div>
+          )}
+          <Card className="monthly-budget-card">
+            <SectionHead
+              title={`${monthTitle(month)} category budgets`}
+              sub="Actual spending comes from your expense records."
+              action={
+                <div className="limit-actions">
+                  <button className="btn secondary" onClick={copyPrevious}>
+                    Copy previous month
+                  </button>
+                  <button
+                    className="btn primary"
+                    onClick={() =>
+                      setForm({
+                        category: categoriesForBudget[0] || "",
+                        amount: "",
+                        description: "",
+                        showInOverview: true,
+                        includeInOverallBudget: true,
+                      })
+                    }
+                  >
+                    <Plus size={15} /> Add Category Budget
+                  </button>
+                </div>
+              }
+            />
+            {report.categoryBudgets.length ? (
+              <div className="limit-grid">
+                {report.categoryBudgets.map((item) => (
+                  <article
+                    className="limit-card monthly-limit-card"
+                    key={item.id}
+                  >
+                    <button
+                      className="monthly-category-open"
+                      onClick={() => loadDetails(item)}
+                    >
+                      <span className="limit-icon">
+                        {categoryEmoji(item.category)}
+                      </span>
+                      <span>
+                        <h3>{item.category}</h3>
+                        <span
+                          className={`limit-status ${item.status.toLowerCase().replace(" ", "-")}`}
+                        >
+                          {item.status}
+                        </span>
+                      </span>
+                    </button>
+                    <div className="limit-card-actions">
+                      <button
+                        className="icon-btn small"
+                        aria-label={`Edit ${item.category} monthly budget`}
+                        onClick={() =>
+                          setForm({ ...item, amount: String(item.allocated) })
+                        }
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        className="icon-btn small"
+                        aria-label={`Delete ${item.category} monthly budget`}
+                        onClick={() => deleteAllocation(item)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    <div className="limit-amount">
+                      <span>Allocated this month</span>
+                      <strong>{money(item.allocated)}</strong>
+                    </div>
+                    <div className="limit-metrics">
+                      <span>
+                        Spent <b>{money(item.spent)}</b>
+                      </span>
+                      <span>
+                        Remaining <b>{money(item.remaining)}</b>
+                      </span>
+                      <span>
+                        Used <b>{item.percentUsed.toFixed(1)}%</b>
+                      </span>
+                    </div>
+                    <div
+                      className="progress-track"
+                      role="progressbar"
+                      aria-label={`${item.category} monthly budget used`}
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      aria-valuenow={Math.min(
+                        100,
+                        Math.max(0, item.percentUsed),
+                      )}
+                    >
+                      <i
+                        style={{
+                          width: `${Math.min(100, Math.max(0, item.percentUsed))}%`,
+                          background:
+                            item.status === "Exceeded"
+                              ? "#dc686a"
+                              : item.status === "Near Limit"
+                                ? "#e6a442"
+                                : "#6481e7",
+                        }}
+                      />
+                    </div>
+                    <button
+                      className="text-btn monthly-view-expenses"
+                      onClick={() => loadDetails(item)}
+                    >
+                      View category expenses <ChevronRight size={14} />
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <Empty
+                title="No monthly category budgets"
+                description="Add category allocations to see how much you can spend and what remains."
+                action={
+                  <button
+                    className="btn primary small-btn"
+                    onClick={() =>
+                      setForm({
+                        category: categoriesForBudget[0] || "",
+                        amount: "",
+                        description: "",
+                        showInOverview: true,
+                        includeInOverallBudget: true,
+                      })
+                    }
+                  >
+                    <Plus size={14} /> Add Category Budget
+                  </button>
+                }
+              />
+            )}
+          </Card>
+        </>
+      )}
+      {form && (
+        <div className="modal-backdrop">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="monthly-budget-form-title"
+          >
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow">{monthTitle(month)}</div>
+                <h2 id="monthly-budget-form-title">
+                  {form.id ? "Edit category budget" : "Add category budget"}
+                </h2>
+              </div>
+              <button
+                className="icon-btn"
+                aria-label="Close"
+                onClick={() => setForm(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={saveAllocation}>
+              <div className="modal-fields">
+                {!form.id && (
+                  <label>
+                    Expense category
+                    <select
+                      required
+                      value={form.category}
+                      onChange={(e) =>
+                        setForm({ ...form, category: e.target.value })
+                      }
+                    >
+                      {categoriesForBudget.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label>
+                  Monthly allocation{" "}
+                  <span className="input-prefix">
+                    <b>₹</b>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={form.amount}
+                      onChange={(e) =>
+                        setForm({ ...form, amount: e.target.value })
+                      }
+                    />
+                  </span>
+                </label>
+                <label className="wide-field">
+                  Description <span className="optional">Optional</span>
+                  <input
+                    maxLength="240"
+                    value={form.description || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, description: e.target.value })
+                    }
+                  />
+                </label>
+                <div className="monthly-allocation-toggles">
+                  <div className="allocation-toggle">
+                    <span>
+                      <strong>Show in Overview</strong>
+                      <small>
+                        Display this category's spending card in the main
+                        Overview dashboard.
+                      </small>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-label="Show in Overview"
+                      aria-checked={form.showInOverview !== false}
+                      className={`preference-switch ${form.showInOverview !== false ? "enabled" : ""}`}
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          showInOverview: form.showInOverview === false,
+                        })
+                      }
+                    >
+                      <i />
+                    </button>
+                  </div>
+                  <div className="allocation-toggle">
+                    <span>
+                      <strong>Include in Overall Budget</strong>
+                      <small>
+                        Include this category's allocated amount when
+                        calculating the total category budget allocation.
+                      </small>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-label="Include in Overall Budget"
+                      aria-checked={form.includeInOverallBudget !== false}
+                      className={`preference-switch ${form.includeInOverallBudget !== false ? "enabled" : ""}`}
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          includeInOverallBudget:
+                            form.includeInOverallBudget === false,
+                        })
+                      }
+                    >
+                      <i />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {error && <div className="form-error">{error}</div>}
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => setForm(null)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary" disabled={busy}>
+                  {busy ? "Saving…" : "Save allocation"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {details && (
+        <div className="modal-backdrop">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="monthly-category-details-title"
+          >
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow">{monthTitle(month)}</div>
+                <h2 id="monthly-category-details-title">
+                  {details.item.category} expenses
+                </h2>
+              </div>
+              <button
+                className="icon-btn"
+                aria-label="Close"
+                onClick={() => setDetails(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="monthly-details-total">
+              Total spent: <strong>{money(details.item.spent)}</strong>
+            </p>
+            {details.expenses.length ? (
+              <div className="category-expense-list">
+                {details.expenses.map((expense) => (
+                  <div key={expense._id}>
+                    <div>
+                      <b>{expense.description}</b>
+                      <span>
+                        {niceDate(expense.transactionDate)} ·{" "}
+                        {expense.paymentMethod}
+                      </span>
+                    </div>
+                    <strong>{money(expense.amount)}</strong>
+                    <button
+                      className="icon-btn small"
+                      aria-label={`Edit ${expense.description}`}
+                      onClick={() => setMonthlyExpenseEdit(expense)}
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty
+                title="No expenses this month"
+                description="Recorded expenses in this category will appear here."
+              />
+            )}
+            <div className="modal-actions">
+              <button
+                className="btn secondary"
+                onClick={() => navigate("/expenses")}
+              >
+                Open Expenses
+              </button>
+              <button className="btn primary" onClick={() => setDetails(null)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {monthlyExpenseEdit && (
+        <RecordModal
+          type="expense"
+          initial={monthlyExpenseEdit}
+          settings={settings}
+          onToast={onToast}
+          onClose={() => setMonthlyExpenseEdit(null)}
+          onSaved={onExpenseSaved}
+        />
+      )}
+    </section>
+  );
 }
 
 function BudgetPage({ onToast, settings }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [weekStart, setWeekStart] = useState(() => monday(location.state?.weekStart || today));
+  const [weekStart, setWeekStart] = useState(() =>
+    monday(location.state?.weekStart || today),
+  );
   const [report, setReport] = useState(null);
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1343,11 +3481,18 @@ function BudgetPage({ onToast, settings }) {
     try {
       const result = await api(`/budgets/weekly${qs({ weekStart })}`);
       setReport(result.report);
-      setAmount(result.report.budget === null ? "" : String(result.report.budget));
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+      setAmount(
+        result.report.budget === null ? "" : String(result.report.budget),
+      );
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { load(); }, [weekStart]);
+  useEffect(() => {
+    load();
+  }, [weekStart]);
   async function save() {
     const value = amount === "" ? NaN : Number(amount);
     if (!Number.isFinite(value) || value < 0 || value > 100000000) {
@@ -1357,89 +3502,835 @@ function BudgetPage({ onToast, settings }) {
     setSaving(true);
     setError("");
     try {
-      const result = await api("/budgets/weekly", { method: "PUT", body: JSON.stringify({ weekStart, amount: value }) });
+      const result = await api("/budgets/weekly", {
+        method: "PUT",
+        body: JSON.stringify({ weekStart, amount: value }),
+      });
       setReport(result.report);
       setAmount(String(result.report.budget));
       onToast("Weekly budget saved.");
-    } catch (e) { setError(e.message); }
-    finally { setSaving(false); }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
   }
   async function saveLimit(event) {
     event.preventDefault();
     const value = Number(limitForm.amount);
-    if (!Number.isFinite(value) || value <= 0) { setError("Enter a spending limit greater than zero."); return; }
-    setLimitBusy(true); setError("");
+    if (!Number.isFinite(value) || value <= 0) {
+      setError("Enter a spending limit greater than zero.");
+      return;
+    }
+    setLimitBusy(true);
+    setError("");
     try {
       const isEdit = Boolean(limitForm.id);
-      const result = await api(isEdit ? `/budgets/categories/${limitForm.id}` : "/budgets/categories", { method: isEdit ? "PUT" : "POST", body: JSON.stringify(isEdit ? { amount: value, description: limitForm.description || "" } : { weekStart, category: limitForm.category, amount: value, description: limitForm.description || "" }) });
-      setReport(result.report); setLimitForm(null); onToast(isEdit ? "Spending limit updated." : "Spending limit created.");
-    } catch (e) { setError(e.message); }
-    finally { setLimitBusy(false); }
+      const result = await api(
+        isEdit ? `/budgets/categories/${limitForm.id}` : "/budgets/categories",
+        {
+          method: isEdit ? "PUT" : "POST",
+          body: JSON.stringify(
+            isEdit
+              ? { amount: value, description: limitForm.description || "" }
+              : {
+                  weekStart,
+                  category: limitForm.category,
+                  amount: value,
+                  description: limitForm.description || "",
+                },
+          ),
+        },
+      );
+      setReport(result.report);
+      setLimitForm(null);
+      onToast(isEdit ? "Spending limit updated." : "Spending limit created.");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLimitBusy(false);
+    }
   }
   async function deleteLimit(item) {
-    if (!window.confirm(`Delete the ${item.category} spending limit for this week? Expenses will remain unchanged.`)) return;
-    try { const result = await api(`/budgets/categories/${item.id}`, { method: "DELETE" }); setReport(result.report); onToast("Spending limit deleted."); }
-    catch (e) { setError(e.message); }
+    if (
+      !window.confirm(
+        `Delete the ${item.category} spending limit for this week? Expenses will remain unchanged.`,
+      )
+    )
+      return;
+    try {
+      const result = await api(`/budgets/categories/${item.id}`, {
+        method: "DELETE",
+      });
+      setReport(result.report);
+      onToast("Spending limit deleted.");
+    } catch (e) {
+      setError(e.message);
+    }
   }
   async function copyLimits() {
-    try { const result = await api("/budgets/categories/copy", { method: "POST", body: JSON.stringify({ weekStart }) }); setReport(result.report); onToast("Previous week’s limits copied."); }
-    catch (e) { setError(e.message); }
+    try {
+      const result = await api("/budgets/categories/copy", {
+        method: "POST",
+        body: JSON.stringify({ weekStart }),
+      });
+      setReport(result.report);
+      onToast("Previous week’s limits copied.");
+    } catch (e) {
+      setError(e.message);
+    }
   }
   async function viewCategory(item) {
-    try { const result = await api(`/budgets/categories/${item.id}/expenses`); setCategoryExpenses({ category: item.category, items: result.items }); }
-    catch (e) { setError(e.message); }
+    try {
+      const result = await api(`/budgets/categories/${item.id}/expenses`);
+      setCategoryExpenses({ category: item.category, items: result.items });
+    } catch (e) {
+      setError(e.message);
+    }
   }
   const end = addDays(weekStart, 6);
   const budgetSet = report?.budget !== null && report?.budget !== undefined;
-  return <>
-    <MonthlyBudgetSection settings={settings} onToast={onToast} />
-    <PageTitle eyebrow="SPEND WITH INTENTION" title="Weekly budget" description="Set a limit for each week and see where your spending goes." action={<button className="btn secondary" onClick={() => setWeekStart(currentWeek)}>Current week</button>} />
-    <div className="budget-week-controls">
-      <button className="btn secondary" onClick={() => setWeekStart((week) => addDays(week, -7))}><ChevronLeft size={16} /> Previous week</button>
-      <strong>{niceDate(`${weekStart}T12:00:00`)} – {niceDate(`${end}T12:00:00`)}</strong>
-      <button className="btn secondary" onClick={() => setWeekStart((week) => addDays(week, 7))}>Next week <ChevronRight size={16} /></button>
-    </div>
-    {error && <div className="inline-error">{error}</div>}
-    {loading || !report ? <div className="table-loading">Loading weekly budget…</div> : <>
-      <div className="stat-grid budget-stats">
-        <Stat label="Weekly budget" value={budgetSet ? money(report.budget) : "Not set"} sub="Selected Monday–Sunday week" icon={Wallet} color="blue" />
-        <Stat label="Spent this week" value={money(report.spent)} sub={`${report.expenseCount} expenses`} icon={WalletCards} color="purple" />
-        <Stat label={report.remaining < 0 ? "Over budget" : "Remaining"} value={budgetSet ? money(Math.abs(report.remaining)) : "—"} sub={report.remaining < 0 ? "Over the configured limit" : "Available in this week"} icon={Activity} color={report.remaining < 0 ? "orange" : "green"} />
-        <Stat label="Budget used" value={budgetSet ? `${Math.floor(report.percentUsed || 0)}%` : "—"} sub={budgetSet ? budgetMessage(report) : "Set a budget to track progress"} icon={ChartNoAxesCombined} color={report.percentUsed >= 80 ? "orange" : "blue"} />
+  return (
+    <>
+      <MonthlyBudgetSection settings={settings} onToast={onToast} />
+      <PageTitle
+        eyebrow="SPEND WITH INTENTION"
+        title="Weekly budget"
+        description="Set a limit for each week and see where your spending goes."
+        action={
+          <button
+            className="btn secondary"
+            onClick={() => setWeekStart(currentWeek)}
+          >
+            Current week
+          </button>
+        }
+      />
+      <div className="budget-week-controls">
+        <button
+          className="btn secondary"
+          onClick={() => setWeekStart((week) => addDays(week, -7))}
+        >
+          <ChevronLeft size={16} /> Previous week
+        </button>
+        <strong>
+          {niceDate(`${weekStart}T12:00:00`)} – {niceDate(`${end}T12:00:00`)}
+        </strong>
+        <button
+          className="btn secondary"
+          onClick={() => setWeekStart((week) => addDays(week, 7))}
+        >
+          Next week <ChevronRight size={16} />
+        </button>
       </div>
-      <Card className="budget-editor">
-        <div><h2>{budgetSet ? "Update this week’s budget" : "Set a budget for this week"}</h2><p>{budgetSet ? "Changing the amount updates the report immediately." : "No default amount is created. Choose the limit that works for you."}</p></div>
-        <label>Weekly budget <span className="input-prefix"><b>₹</b><input aria-label="Weekly budget amount" type="number" min="0" max="100000000" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Enter amount" /></span></label>
-        <button className="btn primary" disabled={saving} onClick={save}><Check size={15} /> {saving ? "Saving…" : "Save budget"}</button>
-      </Card>
-      {!budgetSet && <Card className="weekly-empty-card"><h2>No budget configured</h2><p>Weekly spending is {money(report.spent)} across {report.expenseCount} expenses. Set a budget above to see remaining funds and progress.</p></Card>}
-      {budgetSet && <>
-        <div className="budget-progress-detail">
-          <div className="weekly-overview-head"><div><span className="eyebrow">WEEKLY PROGRESS</span><h2>{Math.floor(report.percentUsed || 0)}% used</h2></div><strong>{budgetMessage(report)}</strong></div>
-          <div className="budget-progress large" role="progressbar" aria-label="Weekly budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.min(100, Math.max(0, report.percentUsed || 0))} aria-valuetext={`${Math.floor(report.percentUsed || 0)}% used`}><i style={{ width: `${Math.min(100, Math.max(0, report.percentUsed || 0))}%`, background: report.percentUsed >= 80 ? "#dc686a" : "#6481e7" }} /></div>
-          <div className="weekly-overview-foot"><span>{report.dailyAllowance !== null ? `${money(report.dailyAllowance)} available per remaining day` : report.remainingDays === 0 ? "Week complete · final result shown" : "No budget remains for additional spending"}</span><span>{report.remaining < 0 ? `${money(Math.abs(report.remaining))} over budget` : `${money(report.remaining)} remaining`}</span></div>
+      {error && <div className="inline-error">{error}</div>}
+      {loading || !report ? (
+        <div className="table-loading">Loading weekly budget…</div>
+      ) : (
+        <>
+          <div className="stat-grid budget-stats">
+            <Stat
+              label="Weekly budget"
+              value={budgetSet ? money(report.budget) : "Not set"}
+              sub="Selected Monday–Sunday week"
+              icon={Wallet}
+              color="blue"
+            />
+            <Stat
+              label="Spent this week"
+              value={money(report.spent)}
+              sub={`${report.expenseCount} expenses`}
+              icon={WalletCards}
+              color="purple"
+            />
+            <Stat
+              label={report.remaining < 0 ? "Over budget" : "Remaining"}
+              value={budgetSet ? money(Math.abs(report.remaining)) : "—"}
+              sub={
+                report.remaining < 0
+                  ? "Over the configured limit"
+                  : "Available in this week"
+              }
+              icon={Activity}
+              color={report.remaining < 0 ? "orange" : "green"}
+            />
+            <Stat
+              label="Budget used"
+              value={
+                budgetSet ? `${Math.floor(report.percentUsed || 0)}%` : "—"
+              }
+              sub={
+                budgetSet
+                  ? budgetMessage(report)
+                  : "Set a budget to track progress"
+              }
+              icon={ChartNoAxesCombined}
+              color={report.percentUsed >= 80 ? "orange" : "blue"}
+            />
+          </div>
+          <Card className="budget-editor">
+            <div>
+              <h2>
+                {budgetSet
+                  ? "Update this week’s budget"
+                  : "Set a budget for this week"}
+              </h2>
+              <p>
+                {budgetSet
+                  ? "Changing the amount updates the report immediately."
+                  : "No default amount is created. Choose the limit that works for you."}
+              </p>
+            </div>
+            <label>
+              Weekly budget{" "}
+              <span className="input-prefix">
+                <b>₹</b>
+                <input
+                  aria-label="Weekly budget amount"
+                  type="number"
+                  min="0"
+                  max="100000000"
+                  step="1"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="Enter amount"
+                />
+              </span>
+            </label>
+            <button className="btn primary" disabled={saving} onClick={save}>
+              <Check size={15} /> {saving ? "Saving…" : "Save budget"}
+            </button>
+          </Card>
+          {!budgetSet && (
+            <Card className="weekly-empty-card">
+              <h2>No budget configured</h2>
+              <p>
+                Weekly spending is {money(report.spent)} across{" "}
+                {report.expenseCount} expenses. Set a budget above to see
+                remaining funds and progress.
+              </p>
+            </Card>
+          )}
+          {budgetSet && (
+            <>
+              <div className="budget-progress-detail">
+                <div className="weekly-overview-head">
+                  <div>
+                    <span className="eyebrow">WEEKLY PROGRESS</span>
+                    <h2>{Math.floor(report.percentUsed || 0)}% used</h2>
+                  </div>
+                  <strong>{budgetMessage(report)}</strong>
+                </div>
+                <div
+                  className="budget-progress large"
+                  role="progressbar"
+                  aria-label="Weekly budget used"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow={Math.min(
+                    100,
+                    Math.max(0, report.percentUsed || 0),
+                  )}
+                  aria-valuetext={`${Math.floor(report.percentUsed || 0)}% used`}
+                >
+                  <i
+                    style={{
+                      width: `${Math.min(100, Math.max(0, report.percentUsed || 0))}%`,
+                      background:
+                        report.percentUsed >= 80 ? "#dc686a" : "#6481e7",
+                    }}
+                  />
+                </div>
+                <div className="weekly-overview-foot">
+                  <span>
+                    {report.dailyAllowance !== null
+                      ? `${money(report.dailyAllowance)} available per remaining day`
+                      : report.remainingDays === 0
+                        ? "Week complete · final result shown"
+                        : "No budget remains for additional spending"}
+                  </span>
+                  <span>
+                    {report.remaining < 0
+                      ? `${money(Math.abs(report.remaining))} over budget`
+                      : `${money(report.remaining)} remaining`}
+                  </span>
+                </div>
+              </div>
+              <div className="dashboard-grid report-grid">
+                <Card>
+                  <SectionHead
+                    title="Spending by category"
+                    sub="Share of this week’s spending"
+                  />
+                  {report.categories.length ? (
+                    <div className="report-category-list">
+                      {report.categories.map((item, i) => (
+                        <div className="report-category" key={item.name}>
+                          <span
+                            className="category-color"
+                            style={{ background: palette[i % palette.length] }}
+                          />
+                          <div>
+                            <div className="report-category-name">
+                              <b>{item.name}</b>
+                              <strong>
+                                {money(item.amount)} · {item.percent.toFixed(0)}
+                                % · {item.count}{" "}
+                                {item.count === 1 ? "expense" : "expenses"}
+                              </strong>
+                            </div>
+                            <div className="progress-track">
+                              <i
+                                style={{
+                                  width: `${item.percent}%`,
+                                  background: palette[i % palette.length],
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <Empty
+                      title="No spending this week"
+                      description="Category details will appear after an expense is added."
+                    />
+                  )}
+                </Card>
+                <Card>
+                  <SectionHead
+                    title="Daily spending"
+                    sub="All seven days, including days with no spending"
+                  />
+                  <ResponsiveContainer width="100%" height={265}>
+                    <BarChart
+                      data={report.daily}
+                      margin={{ left: -15, right: 4, top: 12, bottom: 0 }}
+                    >
+                      <CartesianGrid
+                        vertical={false}
+                        stroke="var(--line)"
+                        strokeDasharray="3 5"
+                      />
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={(date) =>
+                          new Intl.DateTimeFormat("en-IN", {
+                            weekday: "short",
+                            timeZone: "UTC",
+                          }).format(new Date(`${date}T12:00:00Z`))
+                        }
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 10, fill: "var(--muted)" }}
+                      />
+                      <YAxis
+                        tickFormatter={compactMoney}
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 10, fill: "var(--muted)" }}
+                      />
+                      <Tooltip
+                        formatter={(value) => money(value)}
+                        labelFormatter={(date) => niceDate(`${date}T12:00:00`)}
+                      />
+                      <ReferenceLine
+                        y={report.budget / 7}
+                        stroke="#d79b4a"
+                        strokeDasharray="5 4"
+                        label={{
+                          value: "Daily budget guide",
+                          fill: "var(--muted)",
+                          fontSize: 9,
+                        }}
+                      />
+                      <Bar
+                        dataKey="amount"
+                        name="Spent"
+                        fill="#6984e8"
+                        radius={[5, 5, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Card>
+              </div>
+            </>
+          )}
+          <Card className="spending-limits">
+            <SectionHead
+              title="My Spending Limits"
+              sub="Weekly category allocations, calculated from your recorded expenses."
+              action={
+                <div className="limit-actions">
+                  <button className="btn secondary" onClick={copyLimits}>
+                    Copy previous week
+                  </button>
+                  <button
+                    className="btn primary"
+                    onClick={() =>
+                      setLimitForm({
+                        category: expenseCategories(settings?.categories)[0] || "",
+                        amount: "",
+                        description: "",
+                      })
+                    }
+                  >
+                    <Plus size={15} /> Create Spending Limit
+                  </button>
+                </div>
+              }
+            />
+            {report.allocationsOverBudget && (
+              <div className="allocation-warning" role="status">
+                Category allocations exceed the overall weekly budget by{" "}
+                {money(Math.abs(report.unallocated))}. Adjust the category
+                limits or overall budget; the weekly budget has not been
+                changed.
+              </div>
+            )}
+            <div className="allocation-summary">
+              <span>
+                Overall budget{" "}
+                <b>{budgetSet ? money(report.budget) : "Not set"}</b>
+              </span>
+              <span>
+                Allocated <b>{money(report.allocated)}</b>
+              </span>
+              <span>
+                Unallocated{" "}
+                <b>
+                  {budgetSet
+                    ? money(report.unallocated)
+                    : "Set an overall budget"}
+                </b>
+              </span>
+              <span>
+                Spent <b>{money(report.spent)}</b>
+              </span>
+            </div>
+            {report.categoryBudgets.length ? (
+              <div className="limit-grid">
+                {report.categoryBudgets.map((item, index) => (
+                  <article className="limit-card" key={item.id}>
+                    <div className="limit-card-head">
+                      <span className="limit-icon">
+                        {
+                          [
+                            "🍽️",
+                            "🥤",
+                            "🎬",
+                            "🚗",
+                            "🛍️",
+                            "🛒",
+                            "🧾",
+                            "💊",
+                            "📚",
+                            "🧴",
+                          ][index % 10]
+                        }
+                      </span>
+                      <div>
+                        <h3>{item.category}</h3>
+                        <span
+                          className={`limit-status ${item.status.toLowerCase().replace(" ", "-")}`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
+                      <div className="limit-card-actions">
+                        <button
+                          className="icon-btn small"
+                          aria-label={`View ${item.category} expenses`}
+                          onClick={() => viewCategory(item)}
+                        >
+                          <Eye size={15} />
+                        </button>
+                        <button
+                          className="icon-btn small"
+                          aria-label={`Edit ${item.category} limit`}
+                          onClick={() =>
+                            setLimitForm({
+                              ...item,
+                              amount: String(item.allocated),
+                            })
+                          }
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          className="icon-btn small"
+                          aria-label={`Delete ${item.category} limit`}
+                          onClick={() => deleteLimit(item)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="limit-amount">
+                      <span>Allocated</span>
+                      <strong>{money(item.allocated)}</strong>
+                    </div>
+                    <div className="limit-metrics">
+                      <span>
+                        Spent <b>{money(item.spent)}</b>
+                      </span>
+                      <span>
+                        Remaining <b>{money(item.remaining)}</b>
+                      </span>
+                      <span>
+                        Used <b>{item.percentUsed.toFixed(1)}%</b>
+                      </span>
+                    </div>
+                    <div
+                      className="progress-track"
+                      role="progressbar"
+                      aria-label={`${item.category} budget used`}
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      aria-valuenow={Math.min(
+                        100,
+                        Math.max(0, item.percentUsed),
+                      )}
+                    >
+                      <i
+                        style={{
+                          width: `${Math.min(100, Math.max(0, item.percentUsed))}%`,
+                          background:
+                            item.status === "Exceeded"
+                              ? "#dc686a"
+                              : item.status === "Near Limit"
+                                ? "#e6a442"
+                                : "#6481e7",
+                        }}
+                      />
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <Empty
+                title="No category limits for this week"
+                description="Create a limit to see category spending and remaining amounts here."
+                action={
+                  <button
+                    className="btn primary small-btn"
+                    onClick={() =>
+                      setLimitForm({
+                        category: expenseCategories(settings?.categories)[0] || "",
+                        amount: "",
+                        description: "",
+                      })
+                    }
+                  >
+                    <Plus size={14} /> Create Spending Limit
+                  </button>
+                }
+              />
+            )}
+          </Card>
+          {report.categoryBudgets.length > 0 && (
+            <Card className="limit-analytics">
+              <SectionHead
+                title="Category spending comparison"
+                sub="Allocated limits compared with actual weekly expenses"
+              />
+              <ResponsiveContainer width="100%" height={265}>
+                <BarChart
+                  data={report.categoryBudgets}
+                  margin={{ left: -12, right: 8, top: 10 }}
+                >
+                  <CartesianGrid
+                    vertical={false}
+                    stroke="var(--line)"
+                    strokeDasharray="3 5"
+                  />
+                  <XAxis
+                    dataKey="category"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 10, fill: "var(--muted)" }}
+                  />
+                  <YAxis
+                    tickFormatter={compactMoney}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 10, fill: "var(--muted)" }}
+                  />
+                  <Tooltip formatter={(value) => money(value)} />
+                  <Bar
+                    dataKey="allocated"
+                    name="Allocated"
+                    fill="#98a8e8"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="spent"
+                    name="Spent"
+                    fill="#e29b5a"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+              <p className="analytics-note">
+                Highest spending:{" "}
+                <b>
+                  {[...report.categoryBudgets].sort(
+                    (a, b) => b.spent - a.spent,
+                  )[0]?.category || "—"}
+                </b>{" "}
+                · Lowest remaining:{" "}
+                <b>
+                  {[...report.categoryBudgets].sort(
+                    (a, b) => a.remaining - b.remaining,
+                  )[0]?.category || "—"}
+                </b>
+              </p>
+            </Card>
+          )}
+          {report.categoryBudgets.length > 0 && (
+            <Card className="limit-analytics">
+              <SectionHead
+                title="Category weekly trends"
+                sub="Actual recorded spending across the last eight weeks"
+              />
+              <ResponsiveContainer width="100%" height={265}>
+                <BarChart
+                  data={report.categoryTrend}
+                  margin={{ left: -12, right: 8, top: 10 }}
+                >
+                  <CartesianGrid
+                    vertical={false}
+                    stroke="var(--line)"
+                    strokeDasharray="3 5"
+                  />
+                  <XAxis
+                    dataKey="weekStart"
+                    tickFormatter={(value) =>
+                      niceDate(`${value}T12:00:00`).split(",")[0]
+                    }
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 9, fill: "var(--muted)" }}
+                  />
+                  <YAxis
+                    tickFormatter={compactMoney}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 10, fill: "var(--muted)" }}
+                  />
+                  <Tooltip
+                    labelFormatter={(value) =>
+                      `Week of ${niceDate(`${value}T12:00:00`)}`
+                    }
+                    formatter={(value, name) => [money(value), name]}
+                  />
+                  {report.categoryBudgets.map((item, index) => (
+                    <Bar
+                      key={item.id}
+                      dataKey={item.category}
+                      name={item.category}
+                      stackId="categories"
+                      fill={palette[index % palette.length]}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+          )}
+          <Card className="weekly-comparison">
+            <SectionHead
+              title="Compared with last week"
+              sub={`${money(report.previousSpent)} spent the previous week`}
+            />
+            <div>
+              <strong>
+                {report.difference === 0
+                  ? "Spending was unchanged"
+                  : report.difference > 0
+                    ? `${money(report.difference)} more spent`
+                    : `${money(Math.abs(report.difference))} less spent`}
+              </strong>
+              <span>
+                {report.changePercent === null
+                  ? "No percentage comparison because last week had no spending."
+                  : `${Math.abs(report.changePercent).toFixed(1)}% ${report.changePercent > 0 ? "higher" : report.changePercent < 0 ? "lower" : "change"} than last week.`}
+              </span>
+            </div>
+            <p>
+              Average daily spending:{" "}
+              <strong>{money(report.averageDaily)}</strong>
+            </p>
+            <p>
+              Largest category this week:{" "}
+              <strong>
+                {report.categories[0]?.name || "No spending recorded"}
+              </strong>
+            </p>
+          </Card>
+        </>
+      )}
+      {limitForm && (
+        <div className="modal-backdrop">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="limit-form-title"
+          >
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow">WEEKLY CATEGORY PLAN</div>
+                <h2 id="limit-form-title">
+                  {limitForm.id
+                    ? "Edit spending limit"
+                    : "Create spending limit"}
+                </h2>
+              </div>
+              <button
+                className="icon-btn"
+                aria-label="Close"
+                onClick={() => setLimitForm(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={saveLimit}>
+              <div className="modal-fields">
+                {!limitForm.id && (
+                  <label>
+                    Category
+                    <select
+                      required
+                      value={limitForm.category}
+                      onChange={(e) =>
+                        setLimitForm({ ...limitForm, category: e.target.value })
+                      }
+                    >
+                      {expenseCategories(settings?.categories).map((category) => (
+                        <option value={category} key={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label>
+                  Weekly limit{" "}
+                  <span className="input-prefix">
+                    <b>₹</b>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={limitForm.amount}
+                      onChange={(e) =>
+                        setLimitForm({ ...limitForm, amount: e.target.value })
+                      }
+                    />
+                  </span>
+                </label>
+                <label className="wide-field">
+                  Description <span className="optional">Optional</span>
+                  <input
+                    maxLength="240"
+                    value={limitForm.description || ""}
+                    onChange={(e) =>
+                      setLimitForm({
+                        ...limitForm,
+                        description: e.target.value,
+                      })
+                    }
+                    placeholder="A note about this limit"
+                  />
+                </label>
+              </div>
+              {error && <div className="form-error">{error}</div>}
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => setLimitForm(null)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary" disabled={limitBusy}>
+                  {limitBusy ? "Saving…" : "Save limit"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-        <div className="dashboard-grid report-grid">
-          <Card><SectionHead title="Spending by category" sub="Share of this week’s spending" />{report.categories.length ? <div className="report-category-list">{report.categories.map((item, i) => <div className="report-category" key={item.name}><span className="category-color" style={{ background: palette[i % palette.length] }} /><div><div className="report-category-name"><b>{item.name}</b><strong>{money(item.amount)} · {item.percent.toFixed(0)}% · {item.count} {item.count === 1 ? "expense" : "expenses"}</strong></div><div className="progress-track"><i style={{ width: `${item.percent}%`, background: palette[i % palette.length] }} /></div></div></div>)}</div> : <Empty title="No spending this week" description="Category details will appear after an expense is added." />}</Card>
-          <Card><SectionHead title="Daily spending" sub="All seven days, including days with no spending" /><ResponsiveContainer width="100%" height={265}><BarChart data={report.daily} margin={{ left: -15, right: 4, top: 12, bottom: 0 }}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="date" tickFormatter={(date) => new Intl.DateTimeFormat("en-IN", { weekday: "short", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`))} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><YAxis tickFormatter={compactMoney} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><Tooltip formatter={(value) => money(value)} labelFormatter={(date) => niceDate(`${date}T12:00:00`)} /><ReferenceLine y={report.budget / 7} stroke="#d79b4a" strokeDasharray="5 4" label={{ value: "Daily budget guide", fill: "var(--muted)", fontSize: 9 }} /><Bar dataKey="amount" name="Spent" fill="#6984e8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></Card>
+      )}
+      {categoryExpenses && (
+        <div className="modal-backdrop">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="category-expenses-title"
+          >
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow">
+                  {niceDate(`${weekStart}T12:00:00`)} –{" "}
+                  {niceDate(`${end}T12:00:00`)}
+                </div>
+                <h2 id="category-expenses-title">
+                  {categoryExpenses.category} expenses
+                </h2>
+              </div>
+              <button
+                className="icon-btn"
+                aria-label="Close"
+                onClick={() => setCategoryExpenses(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {categoryExpenses.items.length ? (
+              <div className="category-expense-list">
+                {categoryExpenses.items.map((item) => (
+                  <div key={item.id}>
+                    <div>
+                      <b>{item.description}</b>
+                      <span>
+                        {niceDate(item.transactionDate)} · {item.paymentMethod}
+                      </span>
+                    </div>
+                    <strong>{money(item.amount)}</strong>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty
+                title="No expenses this week"
+                description="Expenses recorded in this category will appear here."
+              />
+            )}
+            <div className="modal-actions">
+              <button
+                className="btn secondary"
+                onClick={() => {
+                  setCategoryExpenses(null);
+                  navigate("/expenses");
+                }}
+              >
+                Open Expenses
+              </button>
+              <button
+                className="btn primary"
+                onClick={() => setCategoryExpenses(null)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
         </div>
-      </>}
-      <Card className="spending-limits">
-        <SectionHead title="My Spending Limits" sub="Weekly category allocations, calculated from your recorded expenses." action={<div className="limit-actions"><button className="btn secondary" onClick={copyLimits}>Copy previous week</button><button className="btn primary" onClick={() => setLimitForm({ category: (settings?.categories || categories)[0] || "", amount: "", description: "" })}><Plus size={15} /> Create Spending Limit</button></div>} />
-        {report.allocationsOverBudget && <div className="allocation-warning" role="status">Category allocations exceed the overall weekly budget by {money(Math.abs(report.unallocated))}. Adjust the category limits or overall budget; the weekly budget has not been changed.</div>}
-        <div className="allocation-summary"><span>Overall budget <b>{budgetSet ? money(report.budget) : "Not set"}</b></span><span>Allocated <b>{money(report.allocated)}</b></span><span>Unallocated <b>{budgetSet ? money(report.unallocated) : "Set an overall budget"}</b></span><span>Spent <b>{money(report.spent)}</b></span></div>
-        {report.categoryBudgets.length ? <div className="limit-grid">{report.categoryBudgets.map((item, index) => <article className="limit-card" key={item.id}>
-          <div className="limit-card-head"><span className="limit-icon">{["🍽️","🥤","🎬","🚗","🛍️","🛒","🧾","💊","📚","🧴"][index % 10]}</span><div><h3>{item.category}</h3><span className={`limit-status ${item.status.toLowerCase().replace(" ", "-")}`}>{item.status}</span></div><div className="limit-card-actions"><button className="icon-btn small" aria-label={`View ${item.category} expenses`} onClick={() => viewCategory(item)}><Eye size={15} /></button><button className="icon-btn small" aria-label={`Edit ${item.category} limit`} onClick={() => setLimitForm({ ...item, amount: String(item.allocated) })}><Edit2 size={14} /></button><button className="icon-btn small" aria-label={`Delete ${item.category} limit`} onClick={() => deleteLimit(item)}><Trash2 size={14} /></button></div></div>
-          <div className="limit-amount"><span>Allocated</span><strong>{money(item.allocated)}</strong></div><div className="limit-metrics"><span>Spent <b>{money(item.spent)}</b></span><span>Remaining <b>{money(item.remaining)}</b></span><span>Used <b>{item.percentUsed.toFixed(1)}%</b></span></div><div className="progress-track" role="progressbar" aria-label={`${item.category} budget used`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.min(100, Math.max(0, item.percentUsed))}><i style={{ width: `${Math.min(100, Math.max(0, item.percentUsed))}%`, background: item.status === "Exceeded" ? "#dc686a" : item.status === "Near Limit" ? "#e6a442" : "#6481e7" }} /></div>
-        </article>)}</div> : <Empty title="No category limits for this week" description="Create a limit to see category spending and remaining amounts here." action={<button className="btn primary small-btn" onClick={() => setLimitForm({ category: (settings?.categories || categories)[0] || "", amount: "", description: "" })}><Plus size={14} /> Create Spending Limit</button>} />}
-      </Card>
-      {report.categoryBudgets.length > 0 && <Card className="limit-analytics"><SectionHead title="Category spending comparison" sub="Allocated limits compared with actual weekly expenses" /><ResponsiveContainer width="100%" height={265}><BarChart data={report.categoryBudgets} margin={{ left: -12, right: 8, top: 10 }}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="category" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><YAxis tickFormatter={compactMoney} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><Tooltip formatter={(value) => money(value)} /><Bar dataKey="allocated" name="Allocated" fill="#98a8e8" radius={[4, 4, 0, 0]} /><Bar dataKey="spent" name="Spent" fill="#e29b5a" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer><p className="analytics-note">Highest spending: <b>{[...report.categoryBudgets].sort((a,b) => b.spent-a.spent)[0]?.category || "—"}</b> · Lowest remaining: <b>{[...report.categoryBudgets].sort((a,b) => a.remaining-b.remaining)[0]?.category || "—"}</b></p></Card>}
-      {report.categoryBudgets.length > 0 && <Card className="limit-analytics"><SectionHead title="Category weekly trends" sub="Actual recorded spending across the last eight weeks" /><ResponsiveContainer width="100%" height={265}><BarChart data={report.categoryTrend} margin={{ left: -12, right: 8, top: 10 }}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="weekStart" tickFormatter={(value) => niceDate(`${value}T12:00:00`).split(",")[0]} tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: "var(--muted)" }} /><YAxis tickFormatter={compactMoney} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted)" }} /><Tooltip labelFormatter={(value) => `Week of ${niceDate(`${value}T12:00:00`)}`} formatter={(value, name) => [money(value), name]} />{report.categoryBudgets.map((item, index) => <Bar key={item.id} dataKey={item.category} name={item.category} stackId="categories" fill={palette[index % palette.length]} />)}</BarChart></ResponsiveContainer></Card>}
-      <Card className="weekly-comparison"><SectionHead title="Compared with last week" sub={`${money(report.previousSpent)} spent the previous week`} /><div><strong>{report.difference === 0 ? "Spending was unchanged" : report.difference > 0 ? `${money(report.difference)} more spent` : `${money(Math.abs(report.difference))} less spent`}</strong><span>{report.changePercent === null ? "No percentage comparison because last week had no spending." : `${Math.abs(report.changePercent).toFixed(1)}% ${report.changePercent > 0 ? "higher" : report.changePercent < 0 ? "lower" : "change"} than last week.`}</span></div><p>Average daily spending: <strong>{money(report.averageDaily)}</strong></p><p>Largest category this week: <strong>{report.categories[0]?.name || "No spending recorded"}</strong></p></Card>
-    </>}
-    {limitForm && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="limit-form-title"><div className="modal-head"><div><div className="eyebrow">WEEKLY CATEGORY PLAN</div><h2 id="limit-form-title">{limitForm.id ? "Edit spending limit" : "Create spending limit"}</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setLimitForm(null)}><X size={18} /></button></div><form onSubmit={saveLimit}><div className="modal-fields">{!limitForm.id && <label>Category<select required value={limitForm.category} onChange={(e) => setLimitForm({ ...limitForm, category: e.target.value })}>{(settings?.categories || categories).map((category) => <option value={category} key={category}>{category}</option>)}</select></label>}<label>Weekly limit <span className="input-prefix"><b>₹</b><input type="number" min="0.01" step="0.01" required value={limitForm.amount} onChange={(e) => setLimitForm({ ...limitForm, amount: e.target.value })} /></span></label><label className="wide-field">Description <span className="optional">Optional</span><input maxLength="240" value={limitForm.description || ""} onChange={(e) => setLimitForm({ ...limitForm, description: e.target.value })} placeholder="A note about this limit" /></label></div>{error && <div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={() => setLimitForm(null)}>Cancel</button><button className="btn primary" disabled={limitBusy}>{limitBusy ? "Saving…" : "Save limit"}</button></div></form></div></div>}
-    {categoryExpenses && <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="category-expenses-title"><div className="modal-head"><div><div className="eyebrow">{niceDate(`${weekStart}T12:00:00`)} – {niceDate(`${end}T12:00:00`)}</div><h2 id="category-expenses-title">{categoryExpenses.category} expenses</h2></div><button className="icon-btn" aria-label="Close" onClick={() => setCategoryExpenses(null)}><X size={18} /></button></div>{categoryExpenses.items.length ? <div className="category-expense-list">{categoryExpenses.items.map((item) => <div key={item.id}><div><b>{item.description}</b><span>{niceDate(item.transactionDate)} · {item.paymentMethod}</span></div><strong>{money(item.amount)}</strong></div>)}</div> : <Empty title="No expenses this week" description="Expenses recorded in this category will appear here." />}<div className="modal-actions"><button className="btn secondary" onClick={() => { setCategoryExpenses(null); navigate("/expenses"); }}>Open Expenses</button><button className="btn primary" onClick={() => setCategoryExpenses(null)}>Done</button></div></div></div>}
-  </>;
+      )}
+    </>
+  );
 }
 
 function RecordModal({
@@ -1460,11 +4351,15 @@ function RecordModal({
   useEffect(() => {
     setAvailableSubjects(learningSubjects);
     if (!isExpense && !learningSubjects.length) {
-      api("/learning/subjects").then((result) => setAvailableSubjects(result.items)).catch(() => {});
+      api("/learning/subjects")
+        .then((result) => setAvailableSubjects(result.items))
+        .catch(() => {});
     }
   }, [isExpense, learningSubjects]);
-  const categoryOptions = settings?.categories?.length ? settings.categories : categories;
-  const subjectOptions = availableSubjects.filter((item) => !item.archived || item._id === initial?.subjectId);
+  const categoryOptions = expenseCategories(settings?.categories);
+  const subjectOptions = availableSubjects.filter(
+    (item) => !item.archived || item._id === initial?.subjectId,
+  );
   const [form, setForm] = useState(
     initial || {
       amount: "",
@@ -1473,7 +4368,11 @@ function RecordModal({
       transactionDate: `${today}T12:00`,
       paymentMethod: "UPI",
       notes: "",
-      subjectId: initial?.subjectId || presetSubjectId || subjectOptions.find((item) => !item.archived)?._id || "",
+      subjectId:
+        initial?.subjectId ||
+        presetSubjectId ||
+        subjectOptions.find((item) => !item.archived)?._id ||
+        "",
       topic: "",
       durationMinutes: "",
       sessionDate: `${today}T12:00`,
@@ -1626,11 +4525,28 @@ function RecordModal({
                   >
                     <option value="">Choose a subject</option>
                     {subjectOptions.map((x) => (
-                      <option key={x._id} value={x._id}>{x.name}{x.archived ? " (archived)" : ""}</option>
+                      <option key={x._id} value={x._id}>
+                        {x.name}
+                        {x.archived ? " (archived)" : ""}
+                      </option>
                     ))}
                   </select>
                 </label>
-                {!subjectOptions.some((item) => !item.archived) && !initial && <div className="wide-field subject-required-note">Create an active subject before logging a session. <button type="button" className="text-btn" onClick={() => { onClose(); navigate("/learning"); }}>Create a subject</button></div>}
+                {!subjectOptions.some((item) => !item.archived) && !initial && (
+                  <div className="wide-field subject-required-note">
+                    Create an active subject before logging a session.{" "}
+                    <button
+                      type="button"
+                      className="text-btn"
+                      onClick={() => {
+                        onClose();
+                        navigate("/learning");
+                      }}
+                    >
+                      Create a subject
+                    </button>
+                  </div>
+                )}
                 <label>
                   Topic
                   <input
@@ -1716,7 +4632,10 @@ function RecordModal({
             <button type="button" className="btn ghost" onClick={onClose}>
               Cancel
             </button>
-            <button disabled={busy || (!isExpense && !form.subjectId)} className="btn primary">
+            <button
+              disabled={busy || (!isExpense && !form.subjectId)}
+              className="btn primary"
+            >
               <Check size={16} />
               {busy ? "Saving…" : isExpense ? "Save expense" : "Save session"}
             </button>
@@ -1727,7 +4646,13 @@ function RecordModal({
   );
 }
 
-function RecordList({ type, items, onEdit, onDelete, learningSubjects = EMPTY_SUBJECTS }) {
+function RecordList({
+  type,
+  items,
+  onEdit,
+  onDelete,
+  learningSubjects = EMPTY_SUBJECTS,
+}) {
   const exp = type === "expense";
   if (!items.length)
     return (
@@ -1766,7 +4691,26 @@ function RecordList({ type, items, onEdit, onDelete, learningSubjects = EMPTY_SU
                 )}
               </td>
               <td>
-                <span className="pill" style={!exp ? (() => { const subject = learningSubjects.find((item) => item._id === x.subjectId); return subject ? { color: subject.color, background: `${subject.color}1c` } : {}; })() : undefined}>{exp ? x.category : x.subject}</span>
+                <span
+                  className="pill"
+                  style={
+                    !exp
+                      ? (() => {
+                          const subject = learningSubjects.find(
+                            (item) => item._id === x.subjectId,
+                          );
+                          return subject
+                            ? {
+                                color: subject.color,
+                                background: `${subject.color}1c`,
+                              }
+                            : {};
+                        })()
+                      : undefined
+                  }
+                >
+                  {exp ? x.category : x.subject}
+                </span>
               </td>
               <td>{niceDate(exp ? x.transactionDate : x.sessionDate)}</td>
               <td>{exp ? x.paymentMethod : duration(x.durationMinutes)}</td>
@@ -1790,12 +4734,23 @@ function RecordList({ type, items, onEdit, onDelete, learningSubjects = EMPTY_SU
     </div>
   );
 }
-function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }) {
+function RecordsPage({
+  type,
+  onToast,
+  settings,
+  fixedSubjectId = "",
+  onChanged,
+}) {
   const exp = type === "expense",
     [items, setItems] = useState([]),
     [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 }),
     [pageSize, setPageSize] = useState("20"),
-    [summary, setSummary] = useState({ totalAmount: 0, count: 0, averageAmount: 0, largestAmount: 0 }),
+    [summary, setSummary] = useState({
+      totalAmount: 0,
+      count: 0,
+      averageAmount: 0,
+      largestAmount: 0,
+    }),
     [filters, setFilters] = useState({
       search: "",
       from: "",
@@ -1814,7 +4769,10 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
   const [learningSubjects, setLearningSubjects] = useState([]);
   const endpoint = exp ? "expenses" : "learning";
   useEffect(() => {
-    if (!exp) api("/learning/subjects").then((result) => setLearningSubjects(result.items)).catch(() => {});
+    if (!exp)
+      api("/learning/subjects")
+        .then((result) => setLearningSubjects(result.items))
+        .catch(() => {});
   }, [exp]);
   async function load(page = 1) {
     setLoading(true);
@@ -1833,7 +4791,15 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
       const r = await api(`/${endpoint}${qs(f)}`);
       setItems(r.items);
       setPagination(r.pagination);
-      if (exp) setSummary(r.summary || { totalAmount: 0, count: 0, averageAmount: 0, largestAmount: 0 });
+      if (exp)
+        setSummary(
+          r.summary || {
+            totalAmount: 0,
+            count: 0,
+            averageAmount: 0,
+            largestAmount: 0,
+          },
+        );
     } catch (e) {
       setError(e.message);
     } finally {
@@ -1878,16 +4844,28 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
     <>
       <PageTitle
         eyebrow={exp ? "MONEY, MADE CLEAR" : "LEARNING, MADE VISIBLE"}
-        title={exp ? "Expenses" : fixedSubjectId ? "Learning history" : "Learning log"}
+        title={
+          exp
+            ? "Expenses"
+            : fixedSubjectId
+              ? "Learning history"
+              : "Learning log"
+        }
         description={
           exp
             ? "Keep track of the little things and the bigger picture."
-            : fixedSubjectId ? "Review or add sessions for this subject." : "A record of what you are learning, one session at a time."
+            : fixedSubjectId
+              ? "Review or add sessions for this subject."
+              : "A record of what you are learning, one session at a time."
         }
         action={
           <button
             id={fixedSubjectId ? "subject-session-add" : undefined}
-            disabled={Boolean(fixedSubjectId && learningSubjects.find((item) => item._id === fixedSubjectId)?.archived)}
+            disabled={Boolean(
+              fixedSubjectId &&
+              learningSubjects.find((item) => item._id === fixedSubjectId)
+                ?.archived,
+            )}
             className="btn primary"
             onClick={() => {
               setEditing(null);
@@ -1901,10 +4879,34 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
       />
       {exp && (
         <div className="stat-grid expense-stat-grid">
-          <Stat label="Total spent" value={money(summary.totalAmount)} sub="Across matching expenses" icon={Wallet} color="blue" />
-          <Stat label="Records" value={summary.count.toLocaleString()} sub="Matching expenses" icon={FileText} color="purple" />
-          <Stat label="Average expense" value={money(summary.averageAmount)} sub="Per matching record" icon={ChartNoAxesCombined} color="green" />
-          <Stat label="Largest expense" value={money(summary.largestAmount)} sub="In the current results" icon={ArrowUpRight} color="orange" />
+          <Stat
+            label="Total spent"
+            value={money(summary.totalAmount)}
+            sub="Across matching expenses"
+            icon={Wallet}
+            color="blue"
+          />
+          <Stat
+            label="Records"
+            value={summary.count.toLocaleString()}
+            sub="Matching expenses"
+            icon={FileText}
+            color="purple"
+          />
+          <Stat
+            label="Average expense"
+            value={money(summary.averageAmount)}
+            sub="Per matching record"
+            icon={ChartNoAxesCombined}
+            color="green"
+          />
+          <Stat
+            label="Largest expense"
+            value={money(summary.largestAmount)}
+            sub="In the current results"
+            icon={ArrowUpRight}
+            color="orange"
+          />
         </div>
       )}
       <Card className="records-card">
@@ -1959,9 +4961,13 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
               disabled={Boolean(fixedSubjectId)}
             >
               <option value="">All subjects</option>
-              {learningSubjects.filter((item) => !item.archived).map((x) => (
-                <option key={x._id} value={x._id}>{x.name}</option>
-              ))}
+              {learningSubjects
+                .filter((item) => !item.archived)
+                .map((x) => (
+                  <option key={x._id} value={x._id}>
+                    {x.name}
+                  </option>
+                ))}
             </select>
           )}
           <input
@@ -2012,7 +5018,13 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
             </button>
             <button
               className="text-btn export-btn"
-              onClick={() => saveExport(`/export/${endpoint}${qs(filters)}`, `${endpoint}.csv`, onToast)}
+              onClick={() =>
+                saveExport(
+                  `/export/${endpoint}${qs(filters)}`,
+                  `${endpoint}.csv`,
+                  onToast,
+                )
+              }
             >
               Export CSV <Download size={14} />
             </button>
@@ -2041,7 +5053,12 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
               : "0 records"}
           </span>
           <div>
-            <PageSizeSelect value={pageSize} onChange={(value) => { setPageSize(value); }} />
+            <PageSizeSelect
+              value={pageSize}
+              onChange={(value) => {
+                setPageSize(value);
+              }}
+            />
             <button
               disabled={pagination.page <= 1}
               onClick={() => load(pagination.page - 1)}
@@ -2071,7 +5088,10 @@ function RecordsPage({ type, onToast, settings, fixedSubjectId = "", onChanged }
           presetSubjectId={fixedSubjectId}
           onClose={() => setModal(false)}
           onToast={onToast}
-          onSaved={() => { load(pagination.page); onChanged?.(); }}
+          onSaved={() => {
+            load(pagination.page);
+            onChanged?.();
+          }}
         />
       )}
       {confirm && (
@@ -2102,17 +5122,25 @@ function Learning(props) {
   const [subjectsLoading, setSubjectsLoading] = useState(true);
   const loadSubjects = async () => {
     setSubjectsLoading(true);
-    try { setItems((await api("/learning/subjects?includeArchived=true")).items); setError(""); }
-    catch (e) { setError(e.message); }
-    finally { setSubjectsLoading(false); }
+    try {
+      setItems((await api("/learning/subjects?includeArchived=true")).items);
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubjectsLoading(false);
+    }
   };
-  useEffect(() => { loadSubjects(); }, []);
-  const overviewQuery = range === "custom"
-    ? qs({ from: customFrom, to: customTo })
-    : qs({ range });
+  useEffect(() => {
+    loadSubjects();
+  }, []);
+  const overviewQuery =
+    range === "custom" ? qs({ from: customFrom, to: customTo }) : qs({ range });
   useEffect(() => {
     if (range === "custom" && (!customFrom || !customTo)) return;
-    api(`/learning/overview${overviewQuery}`).then(setOverview).catch((e) => setError(e.message));
+    api(`/learning/overview${overviewQuery}`)
+      .then(setOverview)
+      .catch((e) => setError(e.message));
   }, [overviewQuery, range, customFrom, customTo]);
   async function saveSubject(subject) {
     try {
@@ -2123,61 +5151,358 @@ function Learning(props) {
       setEditing(null);
       props.onToast(editing?._id ? "Subject updated." : "Subject created.");
       await loadSubjects();
-    } catch (e) { setError(e.message); throw e; }
+    } catch (e) {
+      setError(e.message);
+      throw e;
+    }
   }
   async function archiveSubject(subject) {
     try {
-      await api(`/learning/subjects/${subject._id}`, { method: "PATCH", body: JSON.stringify({ archived: !subject.archived }) });
-      props.onToast(subject.archived ? "Subject restored." : "Subject archived.");
+      await api(`/learning/subjects/${subject._id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ archived: !subject.archived }),
+      });
+      props.onToast(
+        subject.archived ? "Subject restored." : "Subject archived.",
+      );
       await loadSubjects();
       const updatedOverview = await api(`/learning/overview${overviewQuery}`);
       setOverview(updatedOverview);
-    } catch (e) { setError(e.message); }
+    } catch (e) {
+      setError(e.message);
+    }
   }
   async function deleteSubject() {
     if (!deletingSubject) return;
     setDeleteBusy(true);
     try {
-      await api(`/learning/subjects/${deletingSubject._id}`, { method: "DELETE" });
-      props.onToast("Subject deleted. Its notes were removed and learning sessions were kept without a subject.");
+      await api(`/learning/subjects/${deletingSubject._id}`, {
+        method: "DELETE",
+      });
+      props.onToast(
+        "Subject deleted. Its notes were removed and learning sessions were kept without a subject.",
+      );
       setDeletingSubject(null);
       await loadSubjects();
       setOverview(await api(`/learning/overview${overviewQuery}`));
-    } catch (e) { setError(e.message); }
-    finally { setDeleteBusy(false); }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDeleteBusy(false);
+    }
   }
   const active = items.filter((item) => !item.archived);
-  const visibleItems = showArchived ? items.filter((item) => item.archived) : active;
-  return <>
-    <PageTitle eyebrow="LEARNING, MADE VISIBLE" title="Learning" description="Organize your progress by subject and make every session count." action={<button className="btn primary" onClick={() => setEditing({})}><Plus size={16} /> Create subject</button>} />
-    {error && <div className="inline-error">{error}</div>}
-    <div className="stat-grid learning-stats">
-      <Stat label="Total learning time" value={overview ? duration(overview.allTimeMinutes) : "—"} sub={`${overview?.allTimeSessions || 0} sessions across all subjects`} icon={Clock3} color="blue" />
-      <Stat label="This week" value={overview ? duration(overview.weekMinutes) : "—"} sub="Monday through today" icon={CalendarDays} color="purple" />
-      <Stat label="This month" value={overview ? duration(overview.monthMinutes) : "—"} sub="Learning time recorded" icon={BookOpen} color="green" />
-      <Stat label="Most studied" value={overview?.mostStudied?.name || "—"} sub={overview?.mostStudied ? duration(overview.mostStudied.minutes) : "Record a session to see your focus"} icon={Sparkles} color="orange" />
-    </div>
-    <Card className="learning-analytics-card">
-      <div className="learning-analytics-head"><SectionHead title="Learning analytics" sub={`${overview?.sessions || 0} sessions · ${duration(overview?.totalMinutes || 0)} in this range`} /><select aria-label="Learning analytics range" value={range} onChange={(e) => setRange(e.target.value)}><option value="week">This week</option><option value="month">This month</option><option value="30d">Last 30 days</option><option value="all">All time</option><option value="custom">Custom dates</option></select></div>
-      {range === "custom" && <div className="learning-custom-dates"><label>From <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} /></label><label>To <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} /></label></div>}
-      {overview?.bySubject?.length ? <div className="learning-analytics-grid"><div className="learning-subject-bars">{overview.bySubject.map((item) => <div key={item.subjectId} className="subject-bar-row"><div className="subject-bar-label"><span><i style={{ background: item.color }} />{item.name}</span><strong>{duration(item.minutes)}</strong></div><div className="bar-track"><i style={{ width: `${Math.max(4, item.minutes / overview.bySubject[0].minutes * 100)}%`, background: item.color }} /></div></div>)}</div><ResponsiveContainer width="100%" height={220}><PieChart><Pie data={overview.bySubject} dataKey="minutes" nameKey="name" innerRadius={52} outerRadius={82} paddingAngle={3}><Cell fill={overview.bySubject[0]?.color} />{overview.bySubject.slice(1).map((item) => <Cell key={item.subjectId} fill={item.color} />)}</Pie><Tooltip formatter={(value) => duration(value)} /></PieChart></ResponsiveContainer></div> : <div className="learning-chart-empty">No sessions in this date range yet.</div>}
-    </Card>
-    <div className="learning-subject-section-head"><div><h2>Your subjects</h2><p>{active.length} active {active.length === 1 ? "subject" : "subjects"}</p></div><button className="text-btn" onClick={() => setShowArchived((value) => !value)}>{showArchived ? "Show active subjects" : `Archived (${items.length - active.length})`}</button></div>
-    {subjectsLoading ? <div className="table-loading">Loading learning subjects…</div> : visibleItems.length ? <div className="learning-subject-grid">{visibleItems.map((subject) => {
-      const Icon = subjectIcons[subject.icon] || BookOpen;
-      const progress = subject.weeklyGoalMinutes ? Math.min(100, subject.weekMinutes / subject.weeklyGoalMinutes * 100) : null;
-      return <Card className={`learning-subject-card${subject.archived ? " archived-subject-card" : ""}`} key={subject._id}>
-        <button className="subject-card-open" disabled={subject.archived} onClick={() => navigate(`/learning/subjects/${subject._id}`)} aria-label={`Open ${subject.name}`}>
-          <span className="subject-card-icon" style={{ color: subject.color, background: `${subject.color}1c` }}><Icon size={20} /></span><span className="subject-card-identity"><strong>{subject.name}</strong><small>{subject.description || "Learning subject"}</small></span>
+  const visibleItems = showArchived
+    ? items.filter((item) => item.archived)
+    : active;
+  return (
+    <>
+      <PageTitle
+        eyebrow="LEARNING, MADE VISIBLE"
+        title="Learning"
+        description="Organize your progress by subject and make every session count."
+        action={
+          <button className="btn primary" onClick={() => setEditing({})}>
+            <Plus size={16} /> Create subject
+          </button>
+        }
+      />
+      {error && <div className="inline-error">{error}</div>}
+      <div className="stat-grid learning-stats">
+        <Stat
+          label="Total learning time"
+          value={overview ? duration(overview.allTimeMinutes) : "—"}
+          sub={`${overview?.allTimeSessions || 0} sessions across all subjects`}
+          icon={Clock3}
+          color="blue"
+        />
+        <Stat
+          label="This week"
+          value={overview ? duration(overview.weekMinutes) : "—"}
+          sub="Monday through today"
+          icon={CalendarDays}
+          color="purple"
+        />
+        <Stat
+          label="This month"
+          value={overview ? duration(overview.monthMinutes) : "—"}
+          sub="Learning time recorded"
+          icon={BookOpen}
+          color="green"
+        />
+        <Stat
+          label="Most studied"
+          value={overview?.mostStudied?.name || "—"}
+          sub={
+            overview?.mostStudied
+              ? duration(overview.mostStudied.minutes)
+              : "Record a session to see your focus"
+          }
+          icon={Sparkles}
+          color="orange"
+        />
+      </div>
+      <Card className="learning-analytics-card">
+        <div className="learning-analytics-head">
+          <SectionHead
+            title="Learning analytics"
+            sub={`${overview?.sessions || 0} sessions · ${duration(overview?.totalMinutes || 0)} in this range`}
+          />
+          <select
+            aria-label="Learning analytics range"
+            value={range}
+            onChange={(e) => setRange(e.target.value)}
+          >
+            <option value="week">This week</option>
+            <option value="month">This month</option>
+            <option value="30d">Last 30 days</option>
+            <option value="all">All time</option>
+            <option value="custom">Custom dates</option>
+          </select>
+        </div>
+        {range === "custom" && (
+          <div className="learning-custom-dates">
+            <label>
+              From{" "}
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+              />
+            </label>
+            <label>
+              To{" "}
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+              />
+            </label>
+          </div>
+        )}
+        {overview?.bySubject?.length ? (
+          <div className="learning-analytics-grid">
+            <div className="learning-subject-bars">
+              {overview.bySubject.map((item) => (
+                <div key={item.subjectId} className="subject-bar-row">
+                  <div className="subject-bar-label">
+                    <span>
+                      <i style={{ background: item.color }} />
+                      {item.name}
+                    </span>
+                    <strong>{duration(item.minutes)}</strong>
+                  </div>
+                  <div className="bar-track">
+                    <i
+                      style={{
+                        width: `${Math.max(4, (item.minutes / overview.bySubject[0].minutes) * 100)}%`,
+                        background: item.color,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie
+                  data={overview.bySubject}
+                  dataKey="minutes"
+                  nameKey="name"
+                  innerRadius={52}
+                  outerRadius={82}
+                  paddingAngle={3}
+                >
+                  <Cell fill={overview.bySubject[0]?.color} />
+                  {overview.bySubject.slice(1).map((item) => (
+                    <Cell key={item.subjectId} fill={item.color} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => duration(value)} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="learning-chart-empty">
+            No sessions in this date range yet.
+          </div>
+        )}
+      </Card>
+      <div className="learning-subject-section-head">
+        <div>
+          <h2>Your subjects</h2>
+          <p>
+            {active.length} active{" "}
+            {active.length === 1 ? "subject" : "subjects"}
+          </p>
+        </div>
+        <button
+          className="text-btn"
+          onClick={() => setShowArchived((value) => !value)}
+        >
+          {showArchived
+            ? "Show active subjects"
+            : `Archived (${items.length - active.length})`}
         </button>
-        {!subject.archived && <><div className="subject-card-stats"><div><span>Total time</span><strong>{duration(subject.totalMinutes)}</strong></div><div><span>Sessions</span><strong>{subject.sessionCount}</strong></div><div><span>This week</span><strong>{duration(subject.weekMinutes)}</strong></div><div><span>Last studied</span><strong>{subject.lastStudied ? relativeStudyDate(subject.lastStudied) : "Not yet"}</strong></div></div>
-        {progress !== null && <div className="subject-goal"><div><span>Weekly goal</span><strong>{Math.floor(progress)}% · {duration(subject.weeklyGoalMinutes)} goal</strong></div><div className="bar-track"><i style={{ width: `${progress}%`, background: subject.color }} /></div></div>}</>}
-        <div className="subject-card-actions">{!subject.archived && <><button className="text-btn" onClick={() => navigate(`/learning/subjects/${subject._id}`)}>Open subject <ChevronRight size={15} /></button><button className="icon-btn small" aria-label={`Edit ${subject.name}`} onClick={() => setEditing(subject)}><Edit2 size={14} /></button></>}<button className="text-btn archive-subject-btn" onClick={() => archiveSubject(subject)}>{subject.archived ? "Restore" : "Archive"}</button><button className="icon-btn small" aria-label={`Delete ${subject.name}`} onClick={() => setDeletingSubject(subject)}><Trash2 size={14} /></button></div>
-      </Card>;
-    })}</div> : <Card className="learning-empty"><span className="empty-icon"><BookOpen size={22} /></span><h2>{showArchived ? "No archived subjects" : "Start with a subject"}</h2><p>Create subjects such as Java, Japanese, or Data Structures, then log sessions under each one.</p>{!showArchived && <button className="btn primary" onClick={() => setEditing({})}><Plus size={16} /> Create your first subject</button>}</Card>}
-    {editing && <SubjectEditor subject={editing._id ? editing : null} onClose={() => setEditing(null)} onSave={saveSubject} />}
-    {deletingSubject && <ConfirmDialog title="Delete this subject?" text={`Delete “${deletingSubject.name}”? Its notes will be deleted. Existing learning sessions will be retained but detached from this subject.`} confirmLabel="Delete subject" busy={deleteBusy} onClose={() => setDeletingSubject(null)} onConfirm={deleteSubject} />}
-  </>;
+      </div>
+      {subjectsLoading ? (
+        <div className="table-loading">Loading learning subjects…</div>
+      ) : visibleItems.length ? (
+        <div className="learning-subject-grid">
+          {visibleItems.map((subject) => {
+            const Icon = subjectIcons[subject.icon] || BookOpen;
+            const progress = subject.weeklyGoalMinutes
+              ? Math.min(
+                  100,
+                  (subject.weekMinutes / subject.weeklyGoalMinutes) * 100,
+                )
+              : null;
+            return (
+              <Card
+                className={`learning-subject-card${subject.archived ? " archived-subject-card" : ""}`}
+                key={subject._id}
+              >
+                <button
+                  className="subject-card-open"
+                  disabled={subject.archived}
+                  onClick={() => navigate(`/learning/subjects/${subject._id}`)}
+                  aria-label={`Open ${subject.name}`}
+                >
+                  <span
+                    className="subject-card-icon"
+                    style={{
+                      color: subject.color,
+                      background: `${subject.color}1c`,
+                    }}
+                  >
+                    <Icon size={20} />
+                  </span>
+                  <span className="subject-card-identity">
+                    <strong>{subject.name}</strong>
+                    <small>{subject.description || "Learning subject"}</small>
+                  </span>
+                </button>
+                {!subject.archived && (
+                  <>
+                    <div className="subject-card-stats">
+                      <div>
+                        <span>Total time</span>
+                        <strong>{duration(subject.totalMinutes)}</strong>
+                      </div>
+                      <div>
+                        <span>Sessions</span>
+                        <strong>{subject.sessionCount}</strong>
+                      </div>
+                      <div>
+                        <span>This week</span>
+                        <strong>{duration(subject.weekMinutes)}</strong>
+                      </div>
+                      <div>
+                        <span>Last studied</span>
+                        <strong>
+                          {subject.lastStudied
+                            ? relativeStudyDate(subject.lastStudied)
+                            : "Not yet"}
+                        </strong>
+                      </div>
+                    </div>
+                    {progress !== null && (
+                      <div className="subject-goal">
+                        <div>
+                          <span>Weekly goal</span>
+                          <strong>
+                            {Math.floor(progress)}% ·{" "}
+                            {duration(subject.weeklyGoalMinutes)} goal
+                          </strong>
+                        </div>
+                        <div className="bar-track">
+                          <i
+                            style={{
+                              width: `${progress}%`,
+                              background: subject.color,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+                <div className="subject-card-actions">
+                  {!subject.archived && (
+                    <>
+                      <button
+                        className="text-btn"
+                        onClick={() =>
+                          navigate(`/learning/subjects/${subject._id}`)
+                        }
+                      >
+                        Open subject <ChevronRight size={15} />
+                      </button>
+                      <button
+                        className="icon-btn small"
+                        aria-label={`Edit ${subject.name}`}
+                        onClick={() => setEditing(subject)}
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                    </>
+                  )}
+                  <button
+                    className="text-btn archive-subject-btn"
+                    onClick={() => archiveSubject(subject)}
+                  >
+                    {subject.archived ? "Restore" : "Archive"}
+                  </button>
+                  <button
+                    className="icon-btn small"
+                    aria-label={`Delete ${subject.name}`}
+                    onClick={() => setDeletingSubject(subject)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <Card className="learning-empty">
+          <span className="empty-icon">
+            <BookOpen size={22} />
+          </span>
+          <h2>
+            {showArchived ? "No archived subjects" : "Start with a subject"}
+          </h2>
+          <p>
+            Create subjects such as Java, Japanese, or Data Structures, then log
+            sessions under each one.
+          </p>
+          {!showArchived && (
+            <button className="btn primary" onClick={() => setEditing({})}>
+              <Plus size={16} /> Create your first subject
+            </button>
+          )}
+        </Card>
+      )}
+      {editing && (
+        <SubjectEditor
+          subject={editing._id ? editing : null}
+          onClose={() => setEditing(null)}
+          onSave={saveSubject}
+        />
+      )}
+      {deletingSubject && (
+        <ConfirmDialog
+          title="Delete this subject?"
+          text={`Delete “${deletingSubject.name}”? Its notes will be deleted. Existing learning sessions will be retained but detached from this subject.`}
+          confirmLabel="Delete subject"
+          busy={deleteBusy}
+          onClose={() => setDeletingSubject(null)}
+          onConfirm={deleteSubject}
+        />
+      )}
+    </>
+  );
 }
 
 const subjectIcons = { BookOpen, Code2, Languages, Wallet, Brain, Sparkles };
@@ -2188,16 +5513,126 @@ function relativeStudyDate(value) {
   return niceDate(value);
 }
 function SubjectEditor({ subject, onClose, onSave }) {
-  const [form, setForm] = useState({ name: subject?.name || "", description: subject?.description || "", icon: subject?.icon || "BookOpen", color: subject?.color || "#637ee8", weeklyGoalMinutes: subject?.weeklyGoalMinutes || "" });
+  const [form, setForm] = useState({
+    name: subject?.name || "",
+    description: subject?.description || "",
+    icon: subject?.icon || "BookOpen",
+    color: subject?.color || "#637ee8",
+    weeklyGoalMinutes: subject?.weeklyGoalMinutes || "",
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function submit(event) {
-    event.preventDefault(); setBusy(true); setError("");
-    try { await onSave({ ...form, weeklyGoalMinutes: form.weeklyGoalMinutes === "" ? null : Number(form.weeklyGoalMinutes) }); }
-    catch (e) { setError(e.message); }
-    finally { setBusy(false); }
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await onSave({
+        ...form,
+        weeklyGoalMinutes:
+          form.weeklyGoalMinutes === "" ? null : Number(form.weeklyGoalMinutes),
+      });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   }
-  return <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="subject-editor-title"><div className="modal-head"><div><div className="eyebrow">LEARNING TRACK</div><h2 id="subject-editor-title">{subject ? "Edit subject" : "Create subject"}</h2></div><button className="icon-btn" aria-label="Close" onClick={onClose}><X size={18} /></button></div><form onSubmit={submit}><div className="modal-fields"><label>Name<input required maxLength="60" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Java" /></label><label>Icon<select value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })}>{Object.keys(subjectIcons).map((icon) => <option key={icon} value={icon}>{icon}</option>)}</select></label><label className="wide-field">Description <span className="optional">Optional</span><textarea rows="2" maxLength="500" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What do you want to learn?" /></label><label>Color<input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} /></label><label>Weekly goal <span className="input-suffix"><input type="number" min="1" max="10080" step="1" value={form.weeklyGoalMinutes} onChange={(e) => setForm({ ...form, weeklyGoalMinutes: e.target.value })} placeholder="Optional" /><b>min / week</b></span></label></div>{error && <div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}>{busy ? "Saving…" : "Save subject"}</button></div></form></div></div>;
+  return (
+    <div className="modal-backdrop">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="subject-editor-title"
+      >
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">LEARNING TRACK</div>
+            <h2 id="subject-editor-title">
+              {subject ? "Edit subject" : "Create subject"}
+            </h2>
+          </div>
+          <button className="icon-btn" aria-label="Close" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-fields">
+            <label>
+              Name
+              <input
+                required
+                maxLength="60"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g. Java"
+              />
+            </label>
+            <label>
+              Icon
+              <select
+                value={form.icon}
+                onChange={(e) => setForm({ ...form, icon: e.target.value })}
+              >
+                {Object.keys(subjectIcons).map((icon) => (
+                  <option key={icon} value={icon}>
+                    {icon}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="wide-field">
+              Description <span className="optional">Optional</span>
+              <textarea
+                rows="2"
+                maxLength="500"
+                value={form.description}
+                onChange={(e) =>
+                  setForm({ ...form, description: e.target.value })
+                }
+                placeholder="What do you want to learn?"
+              />
+            </label>
+            <label>
+              Color
+              <input
+                type="color"
+                value={form.color}
+                onChange={(e) => setForm({ ...form, color: e.target.value })}
+              />
+            </label>
+            <label>
+              Weekly goal{" "}
+              <span className="input-suffix">
+                <input
+                  type="number"
+                  min="1"
+                  max="10080"
+                  step="1"
+                  value={form.weeklyGoalMinutes}
+                  onChange={(e) =>
+                    setForm({ ...form, weeklyGoalMinutes: e.target.value })
+                  }
+                  placeholder="Optional"
+                />
+                <b>min / week</b>
+              </span>
+            </label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-actions">
+            <button type="button" className="btn ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn primary" disabled={busy}>
+              {busy ? "Saving…" : "Save subject"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 function LearningSubjectPage({ onToast, settings }) {
   const { subjectId } = useParams();
@@ -2205,87 +5640,695 @@ function LearningSubjectPage({ onToast, settings }) {
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
   const [activeTab, setActiveTab] = useState("sessions");
-  const load = async () => { try { setData(await api(`/learning/subjects/${subjectId}`)); setError(""); } catch (e) { setError(e.message); } };
-  useEffect(() => { load(); }, [subjectId]);
-  if (!data) return error ? <div className="inline-error">{error}<button onClick={load}>Try again</button></div> : <div className="table-loading">Loading subject…</div>;
+  const load = async () => {
+    try {
+      setData(await api(`/learning/subjects/${subjectId}`));
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+  useEffect(() => {
+    load();
+  }, [subjectId]);
+  if (!data)
+    return error ? (
+      <div className="inline-error">
+        {error}
+        <button onClick={load}>Try again</button>
+      </div>
+    ) : (
+      <div className="table-loading">Loading subject…</div>
+    );
   const { subject } = data;
   const Icon = subjectIcons[subject.icon] || BookOpen;
-  return <>
-    <PageTitle eyebrow="SUBJECT LEARNING TRACK" title={subject.name} description={subject.description || "Your sessions and progress in this subject."} action={<><button className="btn secondary" onClick={() => setEditing(true)}><Edit2 size={14} /> Edit subject</button><button className="btn primary" disabled={subject.archived} onClick={() => document.getElementById("subject-session-add")?.click()}><Plus size={15} /> Add session</button></>} />
-    <div className="subject-detail-banner"><span className="subject-card-icon large" style={{ color: subject.color, background: `${subject.color}1c` }}><Icon size={25} /></span><div><span className="eyebrow">SUBJECT OVERVIEW</span><h2>{subject.name}</h2><p>{subject.description || "No description added."}</p><p className="subject-latest">Most recent: {data.recentSession ? `${data.recentSession.topic || "Learning session"} · ${niceDate(data.recentSession.sessionDate)}` : "No session recorded yet."}</p></div>{subject.weeklyGoalMinutes && <div className="subject-detail-goal"><span>This week’s goal</span><strong>{duration(subject.weekMinutes)} / {duration(subject.weeklyGoalMinutes)}</strong><div className="bar-track"><i style={{ width: `${Math.min(100, subject.weekMinutes / subject.weeklyGoalMinutes * 100)}%`, background: subject.color }} /></div></div>}</div>
-    <div className="stat-grid learning-stats"><Stat label="Total time invested" value={duration(subject.totalMinutes)} sub="Across all sessions" icon={Clock3} color="blue" /><Stat label="Sessions" value={subject.sessionCount} sub={subject.lastStudied ? `Last studied ${relativeStudyDate(subject.lastStudied)}` : "No sessions recorded"} icon={BookOpen} color="purple" /><Stat label="This week" value={duration(subject.weekMinutes)} sub="Monday through today" icon={CalendarDays} color="green" /><Stat label="This month" value={duration(subject.monthMinutes)} sub="Learning time recorded" icon={Sparkles} color="orange" /></div>
-    <div className="subject-tabs" role="tablist" aria-label="Subject sections"><button type="button" role="tab" aria-selected={activeTab === "sessions"} className={activeTab === "sessions" ? "active" : ""} onClick={() => setActiveTab("sessions")}>Sessions</button><button type="button" role="tab" aria-selected={activeTab === "notes"} className={activeTab === "notes" ? "active" : ""} onClick={() => setActiveTab("notes")}>Notes</button></div>
-    {activeTab === "notes" ? <SubjectNotes subject={subject} onToast={onToast} /> : <>
-    <div className="dashboard-grid report-grid subject-chart-grid"><Card><SectionHead title="Daily learning this week" sub="Minutes invested each day" /><ResponsiveContainer width="100%" height={240}><BarChart data={data.dailyTrend}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="date" tickFormatter={(value) => new Intl.DateTimeFormat("en-IN", { weekday: "short", timeZone: "UTC" }).format(new Date(`${value}T12:00:00Z`))} tickLine={false} axisLine={false} /><YAxis /><Tooltip formatter={(value) => duration(value)} /><Bar dataKey="minutes" name="Learning" fill={subject.color} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></Card><Card><SectionHead title="Weekly trend" sub="Last eight weeks" /><ResponsiveContainer width="100%" height={240}><AreaChart data={data.weeklyTrend}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="weekStart" tickFormatter={(value) => niceDate(`${value}T12:00:00`).split(",")[0]} tickLine={false} axisLine={false} /><YAxis /><Tooltip formatter={(value) => duration(value)} /><Area dataKey="minutes" name="Learning" stroke={subject.color} fill={subject.color} fillOpacity={0.16} /></AreaChart></ResponsiveContainer></Card><Card><SectionHead title="Monthly trend" sub="Last six months" /><ResponsiveContainer width="100%" height={240}><BarChart data={data.monthlyTrend}><CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" /><XAxis dataKey="month" tickFormatter={(value) => new Intl.DateTimeFormat("en-IN", { month: "short", timeZone: "UTC" }).format(new Date(`${value}-15T12:00:00Z`))} tickLine={false} axisLine={false} /><YAxis /><Tooltip formatter={(value) => duration(value)} /><Bar dataKey="minutes" name="Learning" fill={subject.color} radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></Card></div>
-    <div className="subject-history-head"><div><h2>Learning history</h2><p>Sessions for {subject.name}, newest first.</p></div></div>
-    <RecordsPage type="learning" onToast={onToast} settings={settings} fixedSubjectId={subject._id} onChanged={load} />
-    </>}
-    {editing && <SubjectEditor subject={subject} onClose={() => setEditing(false)} onSave={async (values) => { await api(`/learning/subjects/${subject._id}`, { method: "PATCH", body: JSON.stringify(values) }); setEditing(false); onToast("Subject updated."); load(); }} />}
-  </>;
+  return (
+    <>
+      <PageTitle
+        eyebrow="SUBJECT LEARNING TRACK"
+        title={subject.name}
+        description={
+          subject.description || "Your sessions and progress in this subject."
+        }
+        action={
+          <>
+            <button className="btn secondary" onClick={() => setEditing(true)}>
+              <Edit2 size={14} /> Edit subject
+            </button>
+            <button
+              className="btn primary"
+              disabled={subject.archived}
+              onClick={() =>
+                document.getElementById("subject-session-add")?.click()
+              }
+            >
+              <Plus size={15} /> Add session
+            </button>
+          </>
+        }
+      />
+      <div className="subject-detail-banner">
+        <span
+          className="subject-card-icon large"
+          style={{ color: subject.color, background: `${subject.color}1c` }}
+        >
+          <Icon size={25} />
+        </span>
+        <div>
+          <span className="eyebrow">SUBJECT OVERVIEW</span>
+          <h2>{subject.name}</h2>
+          <p>{subject.description || "No description added."}</p>
+          <p className="subject-latest">
+            Most recent:{" "}
+            {data.recentSession
+              ? `${data.recentSession.topic || "Learning session"} · ${niceDate(data.recentSession.sessionDate)}`
+              : "No session recorded yet."}
+          </p>
+        </div>
+        {subject.weeklyGoalMinutes && (
+          <div className="subject-detail-goal">
+            <span>This week’s goal</span>
+            <strong>
+              {duration(subject.weekMinutes)} /{" "}
+              {duration(subject.weeklyGoalMinutes)}
+            </strong>
+            <div className="bar-track">
+              <i
+                style={{
+                  width: `${Math.min(100, (subject.weekMinutes / subject.weeklyGoalMinutes) * 100)}%`,
+                  background: subject.color,
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="stat-grid learning-stats">
+        <Stat
+          label="Total time invested"
+          value={duration(subject.totalMinutes)}
+          sub="Across all sessions"
+          icon={Clock3}
+          color="blue"
+        />
+        <Stat
+          label="Sessions"
+          value={subject.sessionCount}
+          sub={
+            subject.lastStudied
+              ? `Last studied ${relativeStudyDate(subject.lastStudied)}`
+              : "No sessions recorded"
+          }
+          icon={BookOpen}
+          color="purple"
+        />
+        <Stat
+          label="This week"
+          value={duration(subject.weekMinutes)}
+          sub="Monday through today"
+          icon={CalendarDays}
+          color="green"
+        />
+        <Stat
+          label="This month"
+          value={duration(subject.monthMinutes)}
+          sub="Learning time recorded"
+          icon={Sparkles}
+          color="orange"
+        />
+      </div>
+      <div
+        className="subject-tabs"
+        role="tablist"
+        aria-label="Subject sections"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "sessions"}
+          className={activeTab === "sessions" ? "active" : ""}
+          onClick={() => setActiveTab("sessions")}
+        >
+          Sessions
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "notes"}
+          className={activeTab === "notes" ? "active" : ""}
+          onClick={() => setActiveTab("notes")}
+        >
+          Notes
+        </button>
+      </div>
+      {activeTab === "notes" ? (
+        <SubjectNotes subject={subject} onToast={onToast} />
+      ) : (
+        <>
+          <div className="dashboard-grid report-grid subject-chart-grid">
+            <Card>
+              <SectionHead
+                title="Daily learning this week"
+                sub="Minutes invested each day"
+              />
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={data.dailyTrend}>
+                  <CartesianGrid
+                    vertical={false}
+                    stroke="var(--line)"
+                    strokeDasharray="3 5"
+                  />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(value) =>
+                      new Intl.DateTimeFormat("en-IN", {
+                        weekday: "short",
+                        timeZone: "UTC",
+                      }).format(new Date(`${value}T12:00:00Z`))
+                    }
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis />
+                  <Tooltip formatter={(value) => duration(value)} />
+                  <Bar
+                    dataKey="minutes"
+                    name="Learning"
+                    fill={subject.color}
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+            <Card>
+              <SectionHead title="Weekly trend" sub="Last eight weeks" />
+              <ResponsiveContainer width="100%" height={240}>
+                <AreaChart data={data.weeklyTrend}>
+                  <CartesianGrid
+                    vertical={false}
+                    stroke="var(--line)"
+                    strokeDasharray="3 5"
+                  />
+                  <XAxis
+                    dataKey="weekStart"
+                    tickFormatter={(value) =>
+                      niceDate(`${value}T12:00:00`).split(",")[0]
+                    }
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis />
+                  <Tooltip formatter={(value) => duration(value)} />
+                  <Area
+                    dataKey="minutes"
+                    name="Learning"
+                    stroke={subject.color}
+                    fill={subject.color}
+                    fillOpacity={0.16}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Card>
+            <Card>
+              <SectionHead title="Monthly trend" sub="Last six months" />
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={data.monthlyTrend}>
+                  <CartesianGrid
+                    vertical={false}
+                    stroke="var(--line)"
+                    strokeDasharray="3 5"
+                  />
+                  <XAxis
+                    dataKey="month"
+                    tickFormatter={(value) =>
+                      new Intl.DateTimeFormat("en-IN", {
+                        month: "short",
+                        timeZone: "UTC",
+                      }).format(new Date(`${value}-15T12:00:00Z`))
+                    }
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis />
+                  <Tooltip formatter={(value) => duration(value)} />
+                  <Bar
+                    dataKey="minutes"
+                    name="Learning"
+                    fill={subject.color}
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+          </div>
+          <div className="subject-history-head">
+            <div>
+              <h2>Learning history</h2>
+              <p>Sessions for {subject.name}, newest first.</p>
+            </div>
+          </div>
+          <RecordsPage
+            type="learning"
+            onToast={onToast}
+            settings={settings}
+            fixedSubjectId={subject._id}
+            onChanged={load}
+          />
+        </>
+      )}
+      {editing && (
+        <SubjectEditor
+          subject={subject}
+          onClose={() => setEditing(false)}
+          onSave={async (values) => {
+            await api(`/learning/subjects/${subject._id}`, {
+              method: "PATCH",
+              body: JSON.stringify(values),
+            });
+            setEditing(false);
+            onToast("Subject updated.");
+            load();
+          }}
+        />
+      )}
+    </>
+  );
 }
 
 function SubjectNotes({ subject, onToast }) {
-  const [items, setItems] = useState([]), [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 20 }), [pageSize, setPageSize] = useState("20"), [loading, setLoading] = useState(true), [error, setError] = useState(""), [search, setSearch] = useState(""), [filter, setFilter] = useState("all"), [draft, setDraft] = useState(null), [saving, setSaving] = useState(false), [deleting, setDeleting] = useState(null), [viewing, setViewing] = useState(null), [page, setPage] = useState(1);
+  const [items, setItems] = useState([]),
+    [pagination, setPagination] = useState({
+      page: 1,
+      pages: 1,
+      total: 0,
+      limit: 20,
+    }),
+    [pageSize, setPageSize] = useState("20"),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState(""),
+    [search, setSearch] = useState(""),
+    [filter, setFilter] = useState("all"),
+    [draft, setDraft] = useState(null),
+    [saving, setSaving] = useState(false),
+    [deleting, setDeleting] = useState(null),
+    [viewing, setViewing] = useState(null),
+    [page, setPage] = useState(1);
   const storageKey = `lifeledger-note-draft:${subject._id}`;
   const load = async () => {
     setLoading(true);
-    try { const params = new URLSearchParams({ page: String(page), limit: pageSize, search, pinned: String(filter === "pinned") }); const result = await api(`/learning/subjects/${subject._id}/notes?${params}`); setItems(result.items); setPagination(result.pagination); setError(""); }
-    catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: pageSize,
+        search,
+        pinned: String(filter === "pinned"),
+      });
+      const result = await api(
+        `/learning/subjects/${subject._id}/notes?${params}`,
+      );
+      setItems(result.items);
+      setPagination(result.pagination);
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
-  useEffect(() => { load(); }, [subject._id, page, pageSize, search, filter]);
+  useEffect(() => {
+    load();
+  }, [subject._id, page, pageSize, search, filter]);
   useEffect(() => {
     if (!draft) return;
-    localStorage.setItem(storageKey, JSON.stringify({ title: draft.title, content: draft.content, pinned: draft.pinned, noteId: draft._id || null }));
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        title: draft.title,
+        content: draft.content,
+        pinned: draft.pinned,
+        noteId: draft._id || null,
+      }),
+    );
     if (!draft.content.trim()) return;
     const timer = setTimeout(async () => {
       setSaving(true);
       try {
-        const body = JSON.stringify({ title: draft.title, content: draft.content, pinned: draft.pinned });
+        const body = JSON.stringify({
+          title: draft.title,
+          content: draft.content,
+          pinned: draft.pinned,
+        });
         const result = draft._id
           ? await api(`/learning/notes/${draft._id}`, { method: "PUT", body })
-          : await api(`/learning/subjects/${subject._id}/notes`, { method: "POST", body });
+          : await api(`/learning/subjects/${subject._id}/notes`, {
+              method: "POST",
+              body,
+            });
         load();
-        setDraft((current) => current && !current._id ? { ...current, _id: result.note._id } : current);
+        setDraft((current) =>
+          current && !current._id
+            ? { ...current, _id: result.note._id }
+            : current,
+        );
         localStorage.removeItem(storageKey);
         setError("");
-      } catch (e) { setError(e.message); }
-      finally { setSaving(false); }
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setSaving(false);
+      }
     }, 700);
     return () => clearTimeout(timer);
   }, [draft?.title, draft?.content, draft?.pinned, draft?._id, subject._id]);
   const startNew = () => {
-    try { const saved = JSON.parse(localStorage.getItem(storageKey)); setDraft(saved ? { ...saved, _id: saved.noteId || undefined } : { title: "", content: "", pinned: false }); }
-    catch { setDraft({ title: "", content: "", pinned: false }); }
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey));
+      setDraft(
+        saved
+          ? { ...saved, _id: saved.noteId || undefined }
+          : { title: "", content: "", pinned: false },
+      );
+    } catch {
+      setDraft({ title: "", content: "", pinned: false });
+    }
   };
-  const changePageSize = (value) => { setPageSize(value); setPage(1); };
+  const changePageSize = (value) => {
+    setPageSize(value);
+    setPage(1);
+  };
   const pageCount = pagination.pages;
   const currentPage = pagination.page;
   const pageItems = items;
-  const changeSearch = (value) => { setSearch(value); setPage(1); };
+  const changeSearch = (value) => {
+    setSearch(value);
+    setPage(1);
+  };
   async function togglePin(note) {
     const pinned = !note.pinned;
     try {
-      const { note: updated } = await api(`/learning/notes/${note._id}`, { method: "PUT", body: JSON.stringify({ title: note.title, content: note.content, pinned }) });
+      const { note: updated } = await api(`/learning/notes/${note._id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          title: note.title,
+          content: note.content,
+          pinned,
+        }),
+      });
       load();
-      setViewing((current) => current?._id === updated._id ? updated : current);
-    } catch (e) { setError(e.message); }
+      setViewing((current) =>
+        current?._id === updated._id ? updated : current,
+      );
+    } catch (e) {
+      setError(e.message);
+    }
   }
   async function removeNote(note) {
-    try { await api(`/learning/notes/${note._id}`, { method: "DELETE" }); setDeleting(null); load(); onToast("Note deleted."); }
-    catch (e) { setError(e.message); setDeleting(null); }
+    try {
+      await api(`/learning/notes/${note._id}`, { method: "DELETE" });
+      setDeleting(null);
+      load();
+      onToast("Note deleted.");
+    } catch (e) {
+      setError(e.message);
+      setDeleting(null);
+    }
   }
-  return <section className="notes-section">
-    <div className="notes-toolbar"><div><h2>Subject notes</h2><p>Ideas saved separately from your study sessions.</p></div><button type="button" className="btn primary" onClick={startNew}><Plus size={15} /> New note</button></div>
-    <div className="notes-filters"><label className="notes-search"><Search size={15} /><input aria-label="Search notes" placeholder="Search notes" value={search} onChange={(e) => changeSearch(e.target.value)} /></label><label className="notes-filter-label">Show<select aria-label="Filter notes" className="notes-filter" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}><option value="all">All notes</option><option value="pinned">Pinned only</option></select></label><PageSizeSelect value={pageSize} onChange={changePageSize} /></div>
-    {error && <div className="inline-error">{error}<button type="button" onClick={load}>Retry</button></div>}
-    {draft && <div className="card note-editor"><label>Title <span className="optional">Optional</span><input maxLength="160" placeholder="A title for this note" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label><label>Note<textarea autoFocus rows="9" maxLength="20000" required placeholder="Jot down your ideas…" value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} /></label><div className="note-editor-foot"><span>{saving ? "Saving…" : draft._id ? "Autosaved" : "Draft saved on this device"}</span><button type="button" className="btn ghost" onClick={() => { setDraft(null); localStorage.removeItem(storageKey); }}>Done</button></div></div>}
-    {loading ? <div className="table-loading">Loading notes…</div> : items.length ? <><div className="notes-grid">{pageItems.map((note) => <article className="card note-card" key={note._id}><div className="note-card-head"><strong>{note.title || "Untitled note"}</strong><button type="button" className={`icon-btn small ${note.pinned ? "note-pinned" : ""}`} aria-label={note.pinned ? "Unpin note" : "Pin note"} title={note.pinned ? "Unpin note" : "Pin note"} onClick={() => togglePin(note)}><Pin size={14} /></button><button type="button" className="icon-btn small" aria-label="Edit note" onClick={() => setDraft(note)}><Edit2 size={14} /></button><button type="button" className="icon-btn small" aria-label="Delete note" onClick={() => setDeleting(note)}><Trash2 size={14} /></button></div><p className="note-preview">{note.content}</p><div className="note-card-actions"><button type="button" className="text-btn" onClick={() => setViewing(note)}>View note <ChevronRight size={14} /></button></div><div className="note-timestamps"><span>Created {new Date(note.createdAt).toLocaleString()}</span><span>Updated {new Date(note.updatedAt).toLocaleString()}</span></div></article>)}</div>{pageCount > 1 && <nav className="notes-pagination" aria-label="Notes pages"><span>{(currentPage - 1) * pagination.limit + 1}–{Math.min(currentPage * pagination.limit, pagination.total)} of {pagination.total}</span><div><button type="button" className="btn ghost" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage} of {pageCount}</span><button type="button" className="btn ghost" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></div></nav>}</> : !draft && <div className="card notes-empty"><FileText size={23} /><h3>{search ? "No matching notes" : "Jot down your first idea"}</h3><p>{search ? "Try another search." : "Keep thoughts, questions, and ideas here, separate from your sessions."}</p>{!search && <button type="button" className="btn secondary" onClick={startNew}>Write a note</button>}</div>}
-    {viewing && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setViewing(null); }}><div className="note-view-dialog" role="dialog" aria-modal="true" aria-labelledby="note-view-title"><div className="modal-head"><div><div className="eyebrow">SUBJECT NOTE</div><h2 id="note-view-title">{viewing.title || "Untitled note"}</h2></div><button type="button" className="icon-btn" aria-label="Close note" onClick={() => setViewing(null)}><X size={18} /></button></div><div className="note-view-content">{viewing.content}</div><div className="note-timestamps"><span>Created {new Date(viewing.createdAt).toLocaleString()}</span><span>Updated {new Date(viewing.updatedAt).toLocaleString()}</span></div><div className="modal-actions"><button type="button" className="btn ghost" onClick={() => setViewing(null)}>Close</button><button type="button" className="btn secondary" onClick={() => { setDraft(viewing); setViewing(null); }}><Edit2 size={14} /> Edit</button></div></div></div>}
-    {deleting && <ConfirmDialog title="Delete this note?" text="This note will be permanently removed." onClose={() => setDeleting(null)} onConfirm={() => removeNote(deleting)} />}
-  </section>;
+  return (
+    <section className="notes-section">
+      <div className="notes-toolbar">
+        <div>
+          <h2>Subject notes</h2>
+          <p>Ideas saved separately from your study sessions.</p>
+        </div>
+        <button type="button" className="btn primary" onClick={startNew}>
+          <Plus size={15} /> New note
+        </button>
+      </div>
+      <div className="notes-filters">
+        <label className="notes-search">
+          <Search size={15} />
+          <input
+            aria-label="Search notes"
+            placeholder="Search notes"
+            value={search}
+            onChange={(e) => changeSearch(e.target.value)}
+          />
+        </label>
+        <label className="notes-filter-label">
+          Show
+          <select
+            aria-label="Filter notes"
+            className="notes-filter"
+            value={filter}
+            onChange={(e) => {
+              setFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="all">All notes</option>
+            <option value="pinned">Pinned only</option>
+          </select>
+        </label>
+        <PageSizeSelect value={pageSize} onChange={changePageSize} />
+      </div>
+      {error && (
+        <div className="inline-error">
+          {error}
+          <button type="button" onClick={load}>
+            Retry
+          </button>
+        </div>
+      )}
+      {draft && (
+        <div className="card note-editor">
+          <label>
+            Title <span className="optional">Optional</span>
+            <input
+              maxLength="160"
+              placeholder="A title for this note"
+              value={draft.title}
+              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+            />
+          </label>
+          <label>
+            Note
+            <textarea
+              autoFocus
+              rows="9"
+              maxLength="20000"
+              required
+              placeholder="Jot down your ideas…"
+              value={draft.content}
+              onChange={(e) => setDraft({ ...draft, content: e.target.value })}
+            />
+          </label>
+          <div className="note-editor-foot">
+            <span>
+              {saving
+                ? "Saving…"
+                : draft._id
+                  ? "Autosaved"
+                  : "Draft saved on this device"}
+            </span>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => {
+                setDraft(null);
+                localStorage.removeItem(storageKey);
+              }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+      {loading ? (
+        <div className="table-loading">Loading notes…</div>
+      ) : items.length ? (
+        <>
+          <div className="notes-grid">
+            {pageItems.map((note) => (
+              <article className="card note-card" key={note._id}>
+                <div className="note-card-head">
+                  <strong>{note.title || "Untitled note"}</strong>
+                  <button
+                    type="button"
+                    className={`icon-btn small ${note.pinned ? "note-pinned" : ""}`}
+                    aria-label={note.pinned ? "Unpin note" : "Pin note"}
+                    title={note.pinned ? "Unpin note" : "Pin note"}
+                    onClick={() => togglePin(note)}
+                  >
+                    <Pin size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn small"
+                    aria-label="Edit note"
+                    onClick={() => setDraft(note)}
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn small"
+                    aria-label="Delete note"
+                    onClick={() => setDeleting(note)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <p className="note-preview">{note.content}</p>
+                <div className="note-card-actions">
+                  <button
+                    type="button"
+                    className="text-btn"
+                    onClick={() => setViewing(note)}
+                  >
+                    View note <ChevronRight size={14} />
+                  </button>
+                </div>
+                <div className="note-timestamps">
+                  <span>
+                    Created {new Date(note.createdAt).toLocaleString()}
+                  </span>
+                  <span>
+                    Updated {new Date(note.updatedAt).toLocaleString()}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+          {pageCount > 1 && (
+            <nav className="notes-pagination" aria-label="Notes pages">
+              <span>
+                {(currentPage - 1) * pagination.limit + 1}–
+                {Math.min(currentPage * pagination.limit, pagination.total)} of{" "}
+                {pagination.total}
+              </span>
+              <div>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={currentPage === 1}
+                  onClick={() => setPage(currentPage - 1)}
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {currentPage} of {pageCount}
+                </span>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={currentPage === pageCount}
+                  onClick={() => setPage(currentPage + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </nav>
+          )}
+        </>
+      ) : (
+        !draft && (
+          <div className="card notes-empty">
+            <FileText size={23} />
+            <h3>{search ? "No matching notes" : "Jot down your first idea"}</h3>
+            <p>
+              {search
+                ? "Try another search."
+                : "Keep thoughts, questions, and ideas here, separate from your sessions."}
+            </p>
+            {!search && (
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={startNew}
+              >
+                Write a note
+              </button>
+            )}
+          </div>
+        )
+      )}
+      {viewing && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setViewing(null);
+          }}
+        >
+          <div
+            className="note-view-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="note-view-title"
+          >
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow">SUBJECT NOTE</div>
+                <h2 id="note-view-title">{viewing.title || "Untitled note"}</h2>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Close note"
+                onClick={() => setViewing(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="note-view-content">{viewing.content}</div>
+            <div className="note-timestamps">
+              <span>
+                Created {new Date(viewing.createdAt).toLocaleString()}
+              </span>
+              <span>
+                Updated {new Date(viewing.updatedAt).toLocaleString()}
+              </span>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setViewing(null)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => {
+                  setDraft(viewing);
+                  setViewing(null);
+                }}
+              >
+                <Edit2 size={14} /> Edit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleting && (
+        <ConfirmDialog
+          title="Delete this note?"
+          text="This note will be permanently removed."
+          onClose={() => setDeleting(null)}
+          onConfirm={() => removeNote(deleting)}
+        />
+      )}
+    </section>
+  );
 }
-function ConfirmDialog({ text, onClose, onConfirm, title = "Delete this record?", confirmLabel = "Delete", busy = false }) {
+function ConfirmDialog({
+  text,
+  onClose,
+  onConfirm,
+  title = "Delete this record?",
+  confirmLabel = "Delete",
+  busy = false,
+}) {
   return (
     <div className="modal-backdrop">
       <div className="confirm-dialog" role="dialog" aria-modal="true">
@@ -2566,7 +6609,8 @@ function Reports() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [dates]);
-  const expExport = () => saveExport(`/export/expenses${qs(dates)}`, "expenses.csv");
+  const expExport = () =>
+    saveExport(`/export/expenses${qs(dates)}`, "expenses.csv");
   return (
     <>
       <PageTitle
@@ -2819,58 +6863,293 @@ function Viewers({ onToast }) {
     setLoading(true);
     setError("");
     try {
-      const result = await api(`/users${qs({ page, limit: pageSize, search, status })}`);
+      const result = await api(
+        `/users${qs({ page, limit: pageSize, search, status })}`,
+      );
       setItems(result.items);
       setAdmin(result.admin || null);
       setPagination(result.pagination);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { load(1); }, [search, status, pageSize]);
+  useEffect(() => {
+    load(1);
+  }, [search, status, pageSize]);
   async function setUserStatus() {
     if (!pending || actionBusy) return;
     const { account, action } = pending;
     setActionBusy(true);
     try {
-      await api(`/users/${account._id}/${action}`, { method: "PATCH", body: "{}" });
-      const message = { approve: `${account.username} is approved.`, reject: `${account.username} was rejected.`, block: `${account.username} is blocked.` }[action];
+      await api(`/users/${account._id}/${action}`, {
+        method: "PATCH",
+        body: "{}",
+      });
+      const message = {
+        approve: `${account.username} is approved.`,
+        reject: `${account.username} was rejected.`,
+        block: `${account.username} is blocked.`,
+      }[action];
       onToast(message);
       setPending(null);
       load(pagination.page);
-    } catch (e) { onToast(e.message); }
-    finally { setActionBusy(false); }
+    } catch (e) {
+      onToast(e.message);
+    } finally {
+      setActionBusy(false);
+    }
   }
   async function unblock(account) {
     try {
-      await api(`/users/${account._id}/unblock`, { method: "PATCH", body: "{}" });
+      await api(`/users/${account._id}/unblock`, {
+        method: "PATCH",
+        body: "{}",
+      });
       onToast(`${account.username} is active again.`);
       load(pagination.page);
-    } catch (e) { onToast(e.message); }
+    } catch (e) {
+      onToast(e.message);
+    }
   }
-  return <>
-    <PageTitle eyebrow="ACCOUNT ACCESS" title="User management" description="Review registrations and manage access to private LifeLedger workspaces." />
-    <Card className="records-card">
-      <div className="filter-bar viewer-filters">
-        <div className="search-field"><Search size={16}/><input aria-label="Search users" placeholder="Search usernames…" value={search} onChange={e => setSearch(e.target.value)}/></div>
-        <label className="viewer-status-filter">Account status<select value={status} onChange={e => setStatus(e.target.value)}><option value="pending_approval">Pending approval</option><option value="active">Active</option><option value="blocked">Blocked</option><option value="rejected">Rejected</option><option value="all">All users</option></select></label>
-        <span className="viewer-count">{pagination.total} {pagination.total === 1 ? "user" : "users"}</span>
-      </div>
-      {error ? <div className="inline-error">{error}<button onClick={() => load()}>Try again</button></div> : loading ? <div className="table-loading">Loading user accounts…</div> : items.length || admin ? (
-        <div className="table-scroll"><table className="users-table"><thead><tr><th>USERNAME</th><th>REGISTERED</th><th>LAST LOGIN</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{admin && <tr className="admin-account-row">
-          <td><div className="managed-user"><span className="avatar">{admin.username.slice(0,1).toUpperCase()}</span><strong>{admin.username}</strong><span className="admin-account-label">Admin account</span></div></td>
-          <td>{niceDate(admin.createdAt)}</td><td>{admin.lastLoginAt ? niceDate(admin.lastLoginAt) : "Never"}</td>
-          <td><span className="account-status active"><i/>Administrator</span></td><td><span className="muted">Protected account</span></td>
-        </tr>}{items.map(account => <tr key={account._id}>
-          <td><div className="managed-user"><span className="avatar">{account.username.slice(0,1).toUpperCase()}</span><strong>{account.username}</strong></div></td>
-          <td>{niceDate(account.createdAt)}</td><td>{account.lastLoginAt ? niceDate(account.lastLoginAt) : "Never"}</td>
-          <td><span className={`account-status ${account.status}`}><i/>{({ pending_approval: "Pending approval", active: "Active", blocked: "Blocked", rejected: "Rejected" })[account.status]}</span></td>
-          <td><div className="user-actions">{account.status === "pending_approval" ? <><button className="btn primary small-btn" onClick={() => setPending({ account, action: "approve" })}>Approve</button><button className="btn block-btn small-btn" onClick={() => setPending({ account, action: "reject" })}>Reject</button></> : account.status === "active" ? <button className="btn block-btn small-btn" onClick={() => setPending({ account, action: "block" })}>Block access</button> : account.status === "blocked" ? <button className="btn secondary small-btn" onClick={() => unblock(account)}>Unblock</button> : <span className="muted">No actions</span>}</div></td>
-        </tr>)}</tbody></table></div>
-      ) : <Empty icon={Users} title={search ? "No matching users" : status === "pending_approval" ? "No pending registrations" : status === "all" ? "No users yet" : `No ${status.replaceAll("_", " ")} users`} description={search ? "Try a different username search." : status === "pending_approval" ? "New registrations that need your review will appear here." : "Try another status filter."} />}
-      <div className="pagination"><span>{pagination.total ? `${pageSize === "all" ? 1 : (pagination.page - 1) * Number(pageSize) + 1}–${pageSize === "all" ? pagination.total : Math.min(pagination.page * Number(pageSize), pagination.total)} of ${pagination.total} users` : "0 users"}</span><div><PageSizeSelect value={pageSize} onChange={setPageSize} /><button disabled={pagination.page <= 1} onClick={() => load(pagination.page - 1)} aria-label="Previous page"><ChevronLeft size={16}/></button><span>Page {pagination.page} of {Math.max(1, pagination.pages)}</span><button disabled={pagination.page >= pagination.pages} onClick={() => load(pagination.page + 1)} aria-label="Next page"><ChevronRight size={16}/></button></div></div>
-    </Card>
-    {pending && <ConfirmDialog busy={actionBusy} title={({ approve: "Approve this account?", reject: "Reject this registration?", block: "Block this account?" })[pending.action]} confirmLabel={({ approve: "Approve", reject: "Reject account", block: "Block access" })[pending.action]} text={({ approve: `${pending.account.username} will be able to sign in and use their own private workspace.`, reject: `${pending.account.username} will not be able to sign in. Their account record will be retained.`, block: `${pending.account.username} will lose access to LifeLedger immediately. Their records will be preserved.` })[pending.action]} onClose={() => setPending(null)} onConfirm={setUserStatus}/>}
-  </>;
+  return (
+    <>
+      <PageTitle
+        eyebrow="ACCOUNT ACCESS"
+        title="User management"
+        description="Review registrations and manage access to private LifeLedger workspaces."
+      />
+      <Card className="records-card">
+        <div className="filter-bar viewer-filters">
+          <div className="search-field">
+            <Search size={16} />
+            <input
+              aria-label="Search users"
+              placeholder="Search usernames…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <label className="viewer-status-filter">
+            Account status
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="pending_approval">Pending approval</option>
+              <option value="active">Active</option>
+              <option value="blocked">Blocked</option>
+              <option value="rejected">Rejected</option>
+              <option value="all">All users</option>
+            </select>
+          </label>
+          <span className="viewer-count">
+            {pagination.total} {pagination.total === 1 ? "user" : "users"}
+          </span>
+        </div>
+        {error ? (
+          <div className="inline-error">
+            {error}
+            <button onClick={() => load()}>Try again</button>
+          </div>
+        ) : loading ? (
+          <div className="table-loading">Loading user accounts…</div>
+        ) : items.length || admin ? (
+          <div className="table-scroll">
+            <table className="users-table">
+              <thead>
+                <tr>
+                  <th>USERNAME</th>
+                  <th>REGISTERED</th>
+                  <th>LAST LOGIN</th>
+                  <th>STATUS</th>
+                  <th>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {admin && (
+                  <tr className="admin-account-row">
+                    <td>
+                      <div className="managed-user">
+                        <span className="avatar">
+                          {admin.username.slice(0, 1).toUpperCase()}
+                        </span>
+                        <strong>{admin.username}</strong>
+                        <span className="admin-account-label">
+                          Admin account
+                        </span>
+                      </div>
+                    </td>
+                    <td>{niceDate(admin.createdAt)}</td>
+                    <td>
+                      {admin.lastLoginAt
+                        ? niceDate(admin.lastLoginAt)
+                        : "Never"}
+                    </td>
+                    <td>
+                      <span className="account-status active">
+                        <i />
+                        Administrator
+                      </span>
+                    </td>
+                    <td>
+                      <span className="muted">Protected account</span>
+                    </td>
+                  </tr>
+                )}
+                {items.map((account) => (
+                  <tr key={account._id}>
+                    <td>
+                      <div className="managed-user">
+                        <span className="avatar">
+                          {account.username.slice(0, 1).toUpperCase()}
+                        </span>
+                        <strong>{account.username}</strong>
+                      </div>
+                    </td>
+                    <td>{niceDate(account.createdAt)}</td>
+                    <td>
+                      {account.lastLoginAt
+                        ? niceDate(account.lastLoginAt)
+                        : "Never"}
+                    </td>
+                    <td>
+                      <span className={`account-status ${account.status}`}>
+                        <i />
+                        {
+                          {
+                            pending_approval: "Pending approval",
+                            active: "Active",
+                            blocked: "Blocked",
+                            rejected: "Rejected",
+                          }[account.status]
+                        }
+                      </span>
+                    </td>
+                    <td>
+                      <div className="user-actions">
+                        {account.status === "pending_approval" ? (
+                          <>
+                            <button
+                              className="btn primary small-btn"
+                              onClick={() =>
+                                setPending({ account, action: "approve" })
+                              }
+                            >
+                              Approve
+                            </button>
+                            <button
+                              className="btn block-btn small-btn"
+                              onClick={() =>
+                                setPending({ account, action: "reject" })
+                              }
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : account.status === "active" ? (
+                          <button
+                            className="btn block-btn small-btn"
+                            onClick={() =>
+                              setPending({ account, action: "block" })
+                            }
+                          >
+                            Block access
+                          </button>
+                        ) : account.status === "blocked" ? (
+                          <button
+                            className="btn secondary small-btn"
+                            onClick={() => unblock(account)}
+                          >
+                            Unblock
+                          </button>
+                        ) : (
+                          <span className="muted">No actions</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty
+            icon={Users}
+            title={
+              search
+                ? "No matching users"
+                : status === "pending_approval"
+                  ? "No pending registrations"
+                  : status === "all"
+                    ? "No users yet"
+                    : `No ${status.replaceAll("_", " ")} users`
+            }
+            description={
+              search
+                ? "Try a different username search."
+                : status === "pending_approval"
+                  ? "New registrations that need your review will appear here."
+                  : "Try another status filter."
+            }
+          />
+        )}
+        <div className="pagination">
+          <span>
+            {pagination.total
+              ? `${pageSize === "all" ? 1 : (pagination.page - 1) * Number(pageSize) + 1}–${pageSize === "all" ? pagination.total : Math.min(pagination.page * Number(pageSize), pagination.total)} of ${pagination.total} users`
+              : "0 users"}
+          </span>
+          <div>
+            <PageSizeSelect value={pageSize} onChange={setPageSize} />
+            <button
+              disabled={pagination.page <= 1}
+              onClick={() => load(pagination.page - 1)}
+              aria-label="Previous page"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span>
+              Page {pagination.page} of {Math.max(1, pagination.pages)}
+            </span>
+            <button
+              disabled={pagination.page >= pagination.pages}
+              onClick={() => load(pagination.page + 1)}
+              aria-label="Next page"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      </Card>
+      {pending && (
+        <ConfirmDialog
+          busy={actionBusy}
+          title={
+            {
+              approve: "Approve this account?",
+              reject: "Reject this registration?",
+              block: "Block this account?",
+            }[pending.action]
+          }
+          confirmLabel={
+            {
+              approve: "Approve",
+              reject: "Reject account",
+              block: "Block access",
+            }[pending.action]
+          }
+          text={
+            {
+              approve: `${pending.account.username} will be able to sign in and use their own private workspace.`,
+              reject: `${pending.account.username} will not be able to sign in. Their account record will be retained.`,
+              block: `${pending.account.username} will lose access to LifeLedger immediately. Their records will be preserved.`,
+            }[pending.action]
+          }
+          onClose={() => setPending(null)}
+          onConfirm={setUserStatus}
+        />
+      )}
+    </>
+  );
 }
 
 function Settings({ settings, onSettings, onToast }) {
@@ -2886,9 +7165,10 @@ function Settings({ settings, onSettings, onToast }) {
         dailyGoalMinutes: settings.dailyGoalMinutes || 60,
         weeklyGoalMinutes: settings.weeklyGoalMinutes || 420,
         theme: settings.theme || "light",
-        categories: settings.categories || categories,
+        categories: expenseCategories(settings.categories),
         timezone: settings.timezone || "Asia/Kolkata",
-        showMonthlyCategoryBudgetsInOverview: settings.showMonthlyCategoryBudgetsInOverview || false,
+        showMonthlyCategoryBudgetsInOverview:
+          settings.showMonthlyCategoryBudgetsInOverview || false,
       });
   }, [settings]);
   if (!form) return <div className="table-loading">Loading settings…</div>;
@@ -2927,10 +7207,14 @@ function Settings({ settings, onSettings, onToast }) {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      onToast(`Backup downloaded with ${Object.keys(b).filter((key) => Array.isArray(b[key])).length} data collections.`);
+      onToast(
+        `Backup downloaded with ${Object.keys(b).filter((key) => Array.isArray(b[key])).length} data collections.`,
+      );
     } catch (e) {
       setError(e.message);
-    } finally { setBackupBusy(false); }
+    } finally {
+      setBackupBusy(false);
+    }
   };
   return (
     <>
@@ -2979,11 +7263,42 @@ function Settings({ settings, onSettings, onToast }) {
             </div>
           </Card>
           <Card className="settings-section">
-            <div className="settings-section-icon purple"><ChartNoAxesCombined size={18} /></div>
+            <div className="settings-section-icon purple">
+              <ChartNoAxesCombined size={18} />
+            </div>
             <div className="settings-section-body">
               <h2>Overview Preferences</h2>
-              <p>Choose which monthly category budget details appear on your main Overview dashboard.</p>
-              <div className="overview-preference-row"><div><strong>Show category-wise spending in Overview</strong><span>Display your monthly category-wise spending limits, actual spending and remaining amounts on your main Overview dashboard.</span></div><button type="button" role="switch" aria-checked={Boolean(form.showMonthlyCategoryBudgetsInOverview)} aria-label="Show category-wise spending in Overview" className={`preference-switch ${form.showMonthlyCategoryBudgetsInOverview ? "enabled" : ""}`} onClick={() => update("showMonthlyCategoryBudgetsInOverview", !form.showMonthlyCategoryBudgetsInOverview)}><i /></button></div>
+              <p>
+                Choose which monthly category budget details appear on your main
+                Overview dashboard.
+              </p>
+              <div className="overview-preference-row">
+                <div>
+                  <strong>Show category-wise spending in Overview</strong>
+                  <span>
+                    Display your monthly category-wise spending limits, actual
+                    spending and remaining amounts on your main Overview
+                    dashboard.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(
+                    form.showMonthlyCategoryBudgetsInOverview,
+                  )}
+                  aria-label="Show category-wise spending in Overview"
+                  className={`preference-switch ${form.showMonthlyCategoryBudgetsInOverview ? "enabled" : ""}`}
+                  onClick={() =>
+                    update(
+                      "showMonthlyCategoryBudgetsInOverview",
+                      !form.showMonthlyCategoryBudgetsInOverview,
+                    )
+                  }
+                >
+                  <i />
+                </button>
+              </div>
             </div>
           </Card>
           <Card className="settings-section">
@@ -3033,8 +7348,16 @@ function Settings({ settings, onSettings, onToast }) {
             </div>
             <div className="settings-section-body">
               <h2>Learning subjects</h2>
-              <p>Create, organize, and archive your learning tracks from the Learning page.</p>
-              <button className="btn secondary" onClick={() => navigate("/learning")}>Manage learning subjects <ChevronRight size={15} /></button>
+              <p>
+                Create, organize, and archive your learning tracks from the
+                Learning page.
+              </p>
+              <button
+                className="btn secondary"
+                onClick={() => navigate("/learning")}
+              >
+                Manage learning subjects <ChevronRight size={15} />
+              </button>
             </div>
           </Card>
           <Card className="settings-section">
@@ -3047,8 +7370,13 @@ function Settings({ settings, onSettings, onToast }) {
                 Download your complete LifeLedger data, including expenses,
                 learning, budgets, notes, fitness, schedules, and preferences.
               </p>
-              <button className="btn secondary" disabled={backupBusy} onClick={backup}>
-                <Download size={16} /> {backupBusy ? "Preparing backup…" : "Download JSON backup"}
+              <button
+                className="btn secondary"
+                disabled={backupBusy}
+                onClick={backup}
+              >
+                <Download size={16} />{" "}
+                {backupBusy ? "Preparing backup…" : "Download JSON backup"}
               </button>
               <span className="field-help">
                 Backups never include your password or session details.

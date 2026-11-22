@@ -16,6 +16,20 @@ import { fitnessRouter } from "./fitness.js";
 import { scheduleRouter } from "./schedules.js";
 
 export const app = express();
+const defaultExpenseCategories = [
+  "Food",
+  "Snacks and beverages",
+  "Travel",
+  "Shopping",
+  "Hostel essentials",
+  "Education",
+  "Entertainment",
+  "Health and personal care",
+  "Bills and subscriptions",
+  "Miscellaneous",
+  "Emergancy Savings",
+  "Home",
+];
 app.use(helmet());
 app.use(cors({ origin: config.frontendOrigin, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
@@ -811,7 +825,7 @@ app.put("/api/budgets/weekly", asyncRoute(async (req, res) => {
   res.json({ report: await weeklyBudgetReport(userId(req), weekStart) });
 }));
 const categoryBudgetInput = zod.object({ weekStart: weekStartSchema, category: zod.string().trim().min(1).max(60), amount: zod.number().finite().positive().max(100000000), description: zod.string().trim().max(240).optional().default("") }).strict();
-const validExpenseCategory = (req, category) => (req.user.settings?.categories || []).find((item) => item.toLocaleLowerCase() === category.toLocaleLowerCase());
+const validExpenseCategory = (req, category) => [...defaultExpenseCategories, ...(req.user.settings?.categories || [])].find((item) => item.toLocaleLowerCase() === category.toLocaleLowerCase());
 const monthlyCategoryBudgetInput = zod.object({ month: monthKeySchema, category: zod.string().trim().min(1).max(60), amount: zod.number().finite().positive().max(100000000), description: zod.string().trim().max(240).optional().default(""), showInOverview: zod.boolean().optional().default(true), includeInOverallBudget: zod.boolean().optional().default(true) }).strict();
 const monthlyBudgetReportFor = (req, month, rows = null) => monthlyCategoryBudgetReport(userId(req), month, req.user.settings.monthlyBudgetPaise || 0, rows);
 app.get("/api/budgets/monthly", asyncRoute(async (req, res) => {
