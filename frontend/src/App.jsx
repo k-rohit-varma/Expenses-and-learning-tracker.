@@ -2751,25 +2751,26 @@ function WeeklyOverview({
 
 const categoryEmoji = (name) =>
   ({
-    Food: "🍽️",
-    Snacks: "🍿",
-    "Snacks and beverages": "🥤",
-    Beverages: "🥤",
-    Entertainment: "🎬",
-    Travel: "🚗",
-    Shopping: "🛍️",
-    Groceries: "🛒",
-    "Bills and Subscriptions": "🧾",
-    "Bills and subscriptions": "🧾",
-    Health: "💊",
-    "Personal Care": "🧴",
-    "Health and personal care": "💊",
-    Education: "📚",
-    Other: "📦",
-    Miscellaneous: "📦",
-    "Emergency savings": "🙈",
-    Home: "🏠",
-  })[name] || "🏷️";
+    food: "🍽️",
+    snacks: "🍿",
+    "snacks and beverages": "🍿",
+    beverages: "🥤",
+    entertainment: "🎬",
+    travel: "🚗",
+    shopping: "🛍️",
+    groceries: "🛒",
+    "bills and subscriptions": "🧾",
+    health: "💊",
+    "personal care": "🧴",
+    "health and personal care": "💊",
+    education: "📚",
+    other: "📦",
+    miscellaneous: "📦",
+    "emergency savings": "🪙",
+    "emergancy savings": "🪙",
+    "hostel essentials": "🏠",
+    home: "🏠",
+  })[String(name || "").trim().toLocaleLowerCase()] || "🏷️";
 function monthTitle(month) {
   return new Intl.DateTimeFormat("en-IN", {
     month: "long",
@@ -3911,24 +3912,11 @@ function BudgetPage({ onToast, settings }) {
             </div>
             {report.categoryBudgets.length ? (
               <div className="limit-grid">
-                {report.categoryBudgets.map((item, index) => (
+              {report.categoryBudgets.map((item) => (
                   <article className="limit-card" key={item.id}>
                     <div className="limit-card-head">
                       <span className="limit-icon">
-                        {
-                          [
-                            "🍽️",
-                            "🥤",
-                            "🎬",
-                            "🚗",
-                            "🛍️",
-                            "🛒",
-                            "🧾",
-                            "💊",
-                            "📚",
-                            "🧴",
-                          ][index % 10]
-                        }
+                        {categoryEmoji(item.category)}
                       </span>
                       <div>
                         <h3>{item.category}</h3>
